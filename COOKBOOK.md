@@ -133,6 +133,8 @@ output/
 
 ## Push And Workflow Verification
 
+When the user asks to push, treat that as permission to commit the scoped local changes, push the current branch to `origin`, and immediately verify the GitHub Actions run for the pushed commit. Do not stop after `git push` unless the user explicitly asks not to check Actions.
+
 After pushing changes, check the GitHub workflow run for the pushed commit before reporting the work as done. A push is not complete until the workflow is either green or the exact blocker is recorded.
 
 Preferred check:
