@@ -135,7 +135,7 @@ output/
 
 When the user asks to push, treat that as permission to commit the scoped local changes, push the current branch to `origin`, and immediately verify the GitHub Actions run for the pushed commit. Do not stop after `git push` unless the user explicitly asks not to check Actions.
 
-After pushing changes, check the GitHub workflow run for the pushed commit before reporting the work as done. A push is not complete until the workflow is either green or the exact blocker is recorded.
+After pushing changes, check the GitHub workflow run for the exact pushed `HEAD` commit before reporting the work as done. A push is not complete until that workflow is green. If the workflow is red, fetch the failing job/annotations, fix the issue or rerun/retry a transient deploy failure, push again if needed, and then verify the new `HEAD` workflow. Do not report the push as done while the latest run for `main` is failed.
 
 Preferred check:
 
@@ -148,3 +148,5 @@ gh run watch --repo L1nwatch/celpip-exam-simulation
 If `gh` is not installed or authenticated, use the GitHub Actions UI for the repository and verify the latest run for the pushed commit SHA. Report the workflow name, status, and run URL or failure summary.
 
 For the GitHub Pages preview, the repository must have Pages enabled with Build and deployment source set to GitHub Actions. If the workflow fails at `actions/configure-pages` with `Get Pages site failed`, enable Pages in GitHub repository settings, then rerun the workflow. Do not add private materials or secrets to the workflow.
+
+If the GitHub Pages workflow passes build and upload but `actions/deploy-pages` fails with `Deployment failed, try again later.`, treat it as a transient GitHub Pages deploy failure. Rerun the workflow when `gh` is authenticated; otherwise push a minimal retry commit only after confirming the working tree is clean and local checks pass. Verify the retry run is green and, when possible, confirm the deployed Pages asset changed before closing the task.
