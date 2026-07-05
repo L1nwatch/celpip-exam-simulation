@@ -130,3 +130,19 @@ materials/private/
 build/
 output/
 ```
+
+## Push And Workflow Verification
+
+After pushing changes, check the GitHub workflow run for the pushed commit before reporting the work as done. A push is not complete until the workflow is either green or the exact blocker is recorded.
+
+Preferred check:
+
+```bash
+git rev-parse HEAD
+gh run list --repo L1nwatch/celpip-exam-simulation --commit "$(git rev-parse HEAD)" --limit 5
+gh run watch --repo L1nwatch/celpip-exam-simulation
+```
+
+If `gh` is not installed or authenticated, use the GitHub Actions UI for the repository and verify the latest run for the pushed commit SHA. Report the workflow name, status, and run URL or failure summary.
+
+For the GitHub Pages preview, the repository must have Pages enabled with Build and deployment source set to GitHub Actions. If the workflow fails at `actions/configure-pages` with `Get Pages site failed`, enable Pages in GitHub repository settings, then rerun the workflow. Do not add private materials or secrets to the workflow.
