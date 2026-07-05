@@ -17,8 +17,8 @@
         "title": "Demo Listening Notice",
         "media": [
           {
-            "type": "audio",
-            "path": "assets/audio/demo-listening-notice.wav"
+            "type": "video",
+            "path": "assets/video/demo-listening-notice.mp4"
           }
         ],
         "question_keys": [

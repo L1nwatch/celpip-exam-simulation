@@ -45,7 +45,7 @@ class MaterialFixtureTests(unittest.TestCase):
         for question in questions["questions"]:
             media_paths.extend(item["path"] for item in question.get("media", []))
 
-        self.assertIn("assets/audio/demo-listening-notice.wav", media_paths)
+        self.assertIn("assets/video/demo-listening-notice.mp4", media_paths)
         self.assertIn("assets/images/demo-community-board.svg", media_paths)
         self.assertIn("assets/images/demo-course-choice.svg", media_paths)
         for path in set(media_paths):
@@ -67,7 +67,7 @@ class MaterialFixtureTests(unittest.TestCase):
             data = json.loads(questions_path.read_text(encoding="utf-8"))
             sections = {question["section"] for question in data["questions"]}
             self.assertTrue({"listening", "reading", "writing", "speaking"}.issubset(sections))
-            self.assertTrue((preview_root / "output" / "local_celpip1_test1" / "assets" / "audio" / "demo-listening-notice.wav").exists())
+            self.assertTrue((preview_root / "output" / "local_celpip1_test1" / "assets" / "video" / "demo-listening-notice.mp4").exists())
             self.assertTrue((preview_root / "output" / "local_celpip1_test1" / "assets" / "images" / "demo-community-board.svg").exists())
             self.assertTrue((preview_root / "output" / "local_celpip1_test1" / "assets" / "images" / "demo-course-choice.svg").exists())
 
