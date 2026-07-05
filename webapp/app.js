@@ -205,7 +205,7 @@ async function loadTest() {
   renderSections();
   resetSectionTimer();
   await render();
-  if (["reading", "writing"].includes(state.section) && !state.submissions[state.section] && !state.timer.running) toggleTimer();
+  if (state.section === "reading" && !state.submissions[state.section] && !state.timer.running) toggleTimer();
 }
 
 async function fetchDatabaseDraft(testId) {
@@ -352,7 +352,7 @@ async function showOverview() {
       state.testId = button.dataset.test;
       state.section = button.dataset.section;
       state.index = 0;
-      state.sectionIntro = state.section === "speaking";
+      state.sectionIntro = isIntroSection(state.section);
       state.sourceCache.clear();
       await loadTest();
     });
@@ -434,7 +434,7 @@ function renderSections() {
     button.addEventListener("click", async () => {
       state.section = button.dataset.section;
       state.index = 0;
-      state.sectionIntro = state.section === "speaking";
+      state.sectionIntro = isIntroSection(state.section);
       stopTimer();
       resetSectionTimer();
       renderSections();
@@ -450,21 +450,24 @@ async function render() {
   const group = currentGroup();
   const submitted = Boolean(state.submissions[state.section]);
   const showSpeakingIntro = state.section === "speaking" && state.sectionIntro;
+  const showWritingIntro = state.section === "writing" && state.sectionIntro && !submitted;
+  const showSectionIntro = showSpeakingIntro || showWritingIntro;
   updatePracticeUrl(group);
   $("partLabel").textContent = `${TESTS.find((t) => t.id === state.testId).label} · ${state.section}`;
   const displayTitle = displayGroupTitle(group);
-  $("questionTitle").textContent = showSpeakingIntro
-    ? "Speaking Test"
+  $("questionTitle").textContent = showSectionIntro
+    ? `${SECTIONS.find((item) => item.id === state.section)?.label || "Practice"} Test`
     : `Part ${state.index + 1}: ${displayTitle} · ${group.questions.length} question${group.questions.length > 1 ? "s" : ""}`;
   const instruction = partInstruction(group);
-  $("questionText").textContent = showSpeakingIntro ? "" : instruction;
-  $("questionText").hidden = showSpeakingIntro || !instruction;
+  $("questionText").textContent = showSectionIntro ? "" : instruction;
+  $("questionText").hidden = showSectionIntro || !instruction;
   renderQuestionNav(groups);
-  $("questionNav").hidden = showSpeakingIntro;
+  $("questionNav").hidden = showSectionIntro;
   renderStats();
   renderSectionResult();
   updateTimer();
   if (showSpeakingIntro) renderSpeakingIntro(groups);
+  else if (showWritingIntro) renderWritingIntro(groups);
   else renderQuestionSet(group, group.media || []);
   const hideSource = (state.section === "listening" && !submitted)
     || state.section === "writing"
@@ -478,10 +481,10 @@ async function render() {
     && sectionQuestions().every((question) => state.answers[question.key]);
   const strictSequence = ["listening", "reading", "writing", "speaking"].includes(state.section) && !submitted;
   $("submitSectionBtn").hidden = submitted
-    || showSpeakingIntro
+    || showSectionIntro
     || (strictSequence && !(state.section === "speaking" && speakingComplete));
-  $("prevBtn").hidden = strictSequence || showSpeakingIntro;
-  $("nextBtn").hidden = showSpeakingIntro || (["listening", "speaking"].includes(state.section) && !submitted);
+  $("prevBtn").hidden = strictSequence || showSectionIntro;
+  $("nextBtn").hidden = showSectionIntro || (["listening", "speaking"].includes(state.section) && !submitted);
   $("prevBtn").disabled = state.index === 0;
   const isLastPart = state.index === groups.length - 1;
   const nextSubmits = isLastPart && !submitted && ["reading", "writing"].includes(state.section);
@@ -525,7 +528,7 @@ function readUrlRoute() {
     testId,
     section,
     partIndex: Number.isFinite(part) && part > 0 ? part - 1 : 0,
-    sectionIntro: section === "speaking" && params.get("intro") === "1",
+    sectionIntro: routeSectionIntro(section, params),
   };
 }
 
@@ -536,9 +539,20 @@ function updatePracticeUrl(group) {
     part: String(state.index + 1),
   });
   if (state.sectionIntro) params.set("intro", "1");
+  else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");
   window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
   const testLabel = TESTS.find((test) => test.id === state.testId)?.label || state.testId;
   document.title = `${testLabel} · ${state.section} · Part ${state.index + 1}`;
+}
+
+function isIntroSection(section) {
+  return section === "speaking" || section === "writing";
+}
+
+function routeSectionIntro(section, params) {
+  if (section === "speaking") return params.get("intro") === "1";
+  if (section === "writing") return params.get("intro") !== "0";
+  return false;
 }
 
 function partInstruction(group) {
@@ -725,7 +739,7 @@ async function startFreshSection(testId, section) {
   state.testId = testId;
   state.section = section;
   state.index = 0;
-  state.sectionIntro = section === "speaking";
+  state.sectionIntro = isIntroSection(section);
   for (const key of [...state.listeningUnlocked]) {
     if (key.startsWith(`${testId}:`)) state.listeningUnlocked.delete(key);
   }
@@ -764,6 +778,34 @@ function renderSpeakingIntro(groups) {
     state.sectionIntro = false;
     state.index = 0;
     await render();
+  });
+  bindPracticeAgainButtons($("answerArea"));
+}
+
+function renderWritingIntro(groups) {
+  const answered = sectionQuestions().filter((question) => state.answers[question.key]).length;
+  const elapsed = Number(state.timings.writing?.elapsed_seconds) || 0;
+  const hasProgress = answered > 0 || elapsed > 0;
+  const primaryLabel = hasProgress ? "Continue Writing" : "Begin Writing";
+  $("mediaArea").innerHTML = "";
+  $("answerArea").innerHTML = `<section class="section-start-panel">
+    <div>
+      <p class="eyebrow">Writing</p>
+      <h2>${escapeHtml(TESTS.find((test) => test.id === state.testId)?.label || state.testId)}</h2>
+      <p>${groups.length} tasks · ${hasProgress ? "Draft in progress" : "Timer starts when you begin"}</p>
+    </div>
+    <div class="section-start-actions">
+      <button class="start-writing-section" type="button">${primaryLabel}</button>
+      ${hasProgress ? `<button class="practice-again ghost" data-test="${state.testId}" data-section="writing" type="button">Practice Again</button>` : ""}
+    </div>
+  </section>`;
+  $("feedback").hidden = true;
+  const startButton = $("answerArea").querySelector(".start-writing-section");
+  startButton.addEventListener("click", async () => {
+    state.sectionIntro = false;
+    state.index = 0;
+    await render();
+    if (!state.submissions.writing && !state.timer.running) toggleTimer();
   });
   bindPracticeAgainButtons($("answerArea"));
 }
@@ -1576,7 +1618,7 @@ function stopTimer() {
 function updateTimer() {
   const timer = document.querySelector(".timer");
   const submission = state.submissions[state.section];
-  if (timer) timer.hidden = state.section === "speaking" && !submission;
+  if (timer) timer.hidden = isIntroSection(state.section) && state.sectionIntro && !submission;
   if (submission) {
     $("timerLabel").textContent = "Time used";
     $("timerValue").textContent = submission.elapsed_seconds === null || submission.elapsed_seconds === undefined

@@ -325,7 +325,8 @@ button:disabled {
   gap: 10px;
 }
 
-.section-start-actions .start-speaking-section {
+.section-start-actions .start-speaking-section,
+.section-start-actions .start-writing-section {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;

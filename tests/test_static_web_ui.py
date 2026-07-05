@@ -149,6 +149,15 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("Raw practice score only. This section is too short for a CELPIP level estimate.", app_js)
         self.assertNotIn('level: level?.level || "M"', app_js)
 
+    def test_writing_uses_start_screen_before_timer(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function renderWritingIntro", app_js)
+        self.assertIn('if (state.section === "reading" && !state.submissions[state.section] && !state.timer.running) toggleTimer();', app_js)
+        self.assertIn('if (section === "writing") return params.get("intro") !== "0";', app_js)
+        self.assertIn('else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");', app_js)
+        self.assertIn('"Begin Writing"', app_js)
+        self.assertIn('if (!state.submissions.writing && !state.timer.running) toggleTimer();', app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:
