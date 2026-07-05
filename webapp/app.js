@@ -228,8 +228,26 @@ function setView(view) {
   $("historyBtn").hidden = view === "history";
 }
 
+function stopPracticePlayback() {
+  document.querySelectorAll("#practiceView audio, #practiceView video").forEach((media) => {
+    try {
+      media.pause();
+      if (Number.isFinite(media.currentTime)) media.currentTime = 0;
+    } catch {
+      // Ignore stale media elements while the practice view is re-rendering.
+    }
+  });
+}
+
+function stopListeningQuestionTimer() {
+  if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
+  state.listeningQuestionTimer = null;
+}
+
 async function showHistory() {
   stopTimer();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
   setView("history");
   window.history.replaceState({}, "", `${window.location.pathname}?view=history`);
   document.title = "CELPIP Practice History";
@@ -273,6 +291,8 @@ async function showHistory() {
 
 async function showOverview() {
   stopTimer();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
   setView("overview");
   window.history.replaceState({}, "", `${window.location.pathname}?view=overview`);
   document.title = "CELPIP Practice Overview";
@@ -432,6 +452,8 @@ function renderSections() {
   }).join("");
   $("sectionTabs").querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
+      stopPracticePlayback();
+      stopListeningQuestionTimer();
       state.section = button.dataset.section;
       state.index = 0;
       state.sectionIntro = isIntroSection(state.section);
@@ -444,6 +466,7 @@ function renderSections() {
 }
 
 async function render() {
+  stopPracticePlayback();
   const groups = sectionGroups();
   if (!groups.length) return;
   if (state.index >= groups.length) state.index = groups.length - 1;

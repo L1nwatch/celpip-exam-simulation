@@ -182,6 +182,14 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn(".recorded-progress-fill", styles)
         self.assertNotIn('<audio class="recorded-playback" controls', app_js)
 
+    def test_leaving_practice_stops_media_playback(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function stopPracticePlayback", app_js)
+        self.assertIn('document.querySelectorAll("#practiceView audio, #practiceView video")', app_js)
+        self.assertIn("function stopListeningQuestionTimer", app_js)
+        self.assertIn("stopPracticePlayback();\n  stopListeningQuestionTimer();\n  setView(\"overview\")", app_js)
+        self.assertIn("stopPracticePlayback();\n  stopListeningQuestionTimer();\n  setView(\"history\")", app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:
