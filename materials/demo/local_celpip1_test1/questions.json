@@ -182,7 +182,7 @@
       "key": "celpip1_test1_listening_demo_q2",
       "id": "demo_listening_q2",
       "number": 2,
-      "question_text": "Question 2 Listen to a short conversation. What will the speakers probably do next?",
+      "question_text": "Question 2 Listen to the workplace notice. What should listeners do after the message?",
       "question_type": "multiple_choice_single",
       "options": [
         {
@@ -665,7 +665,7 @@
       "key": "celpip1_test1_listening_demo_q2",
       "id": "demo_listening_q2",
       "number": 2,
-      "question_text": "Question 2 Listen to a short conversation. What will the speakers probably do next?",
+      "question_text": "Question 2 Listen to the workplace notice. What should listeners do after the message?",
       "question_type": "multiple_choice_single",
       "options": [
         {
