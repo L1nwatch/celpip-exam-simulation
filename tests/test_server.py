@@ -159,6 +159,26 @@ class ServerPersistenceTests(unittest.TestCase):
 
         self.assertEqual(["writing_q1"], list(questions))
 
+    def test_clean_writing_prompt_removes_trailing_timing_text(self):
+        prompt = (
+            "Read the following information. Write an email in about 150-200 words. "
+            "Explain the problem and suggest two improvements. 26 Minutes"
+        )
+
+        self.assertEqual(
+            "Read the following information. Write an email in about 150-200 words. "
+            "Explain the problem and suggest two improvements.",
+            server.clean_writing_prompt(prompt),
+        )
+
+    def test_clean_writing_prompt_keeps_task_content(self):
+        prompt = "Choose one option and explain your reasons. Time limit: 25 minutes"
+
+        self.assertEqual(
+            "Choose one option and explain your reasons.",
+            server.clean_writing_prompt(prompt),
+        )
+
     def test_handler_blocks_legacy_output_static_routes(self):
         handler = server.Handler.__new__(server.Handler)
         handler.path = "/output/local_celpip1_test1/questions.json"

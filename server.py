@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import re
 import ssl
 import sqlite3
 import uuid
@@ -46,6 +47,18 @@ WRITING_CRITERIA = """CELPIP Writing practice rubric:
 3. Readability: grammar, syntax, spelling, punctuation, sentence variety, paragraphing, formatting, connectors, and transitions.
 4. Task Fulfillment: coverage of every instruction, completeness, appropriate tone, and the 150-200 word target.
 Each of the two tasks is worth 50% of the overall Writing result."""
+
+WRITING_TIMER_RE = re.compile(
+    r"""
+    (?:^|\s)
+    (?:
+      (?:time\s*(?:limit|allowed)?|duration)\s*:?\s*
+    )?
+    \d+\s*(?:minutes?|mins?|seconds?|secs?)\.?
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def tls_context():
@@ -304,6 +317,16 @@ def calibration_anchors(question):
     ]
 
 
+def clean_writing_prompt(text):
+    prompt = re.sub(r"\s+", " ", str(text or "")).strip()
+    while True:
+        cleaned = WRITING_TIMER_RE.sub("", prompt).strip()
+        cleaned = re.sub(r"\s+([.!?])$", r"\1", cleaned).strip()
+        if cleaned == prompt:
+            return cleaned
+        prompt = cleaned
+
+
 def writing_assessment_schema():
     criterion = {
         "type": "object",
@@ -374,7 +397,7 @@ def request_writing_assessment(attempt_id):
             {
                 "question_key": response["question_key"],
                 "task_number": response["question_number"] or question.get("number") or len(tasks) + 1,
-                "prompt": question.get("question_text", ""),
+                "prompt": clean_writing_prompt(question.get("question_text", "")),
                 "target_words": question.get("timing", {}).get("word_count_target", {"min": 150, "max": 200}),
                 "candidate_response": response.get("answer_text") or "",
                 "calibration_anchors": calibration_anchors(question),
