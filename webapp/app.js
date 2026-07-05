@@ -1047,7 +1047,14 @@ function renderQuestionCard(q, strictListening = false) {
         <button class="record-response" type="button" hidden>Enable Microphone</button>
         <strong class="recording-time">00:00</strong>
       </div>
-      <audio class="recorded-playback" controls hidden></audio>
+      <audio class="recorded-playback" preload="metadata" hidden></audio>
+      <div class="recorded-player" hidden>
+        <button class="recorded-play-toggle" type="button" aria-label="Play recording">▶</button>
+        <div class="recorded-progress-track" role="slider" aria-label="Recording progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+          <span class="recorded-progress-fill"></span>
+        </div>
+        <span class="recorded-player-time">00:00 / 00:00</span>
+      </div>
       <small class="recorder-status">Task starts automatically.</small>
     </div>
     ${state.submissions.speaking ? speakingAssessmentHtml(q) : ""}
@@ -1218,6 +1225,7 @@ function bindQuestionCard(q) {
 async function bindSpeakingRecorder(card, question) {
   const recordButton = card.querySelector(".record-response");
   const playback = card.querySelector(".recorded-playback");
+  const playbackUi = bindRecordedPlayback(card, playback);
   const status = card.querySelector(".recorder-status");
   const time = card.querySelector(".recording-time");
   if (state.submissions.speaking) {
@@ -1363,8 +1371,7 @@ async function bindSpeakingRecorder(card, question) {
     const recordings = response.ok ? (await response.json()).recordings || [] : [];
     if (recordings.length) {
       if (state.submissions.speaking) {
-        playback.src = recordings[0].url;
-        playback.hidden = false;
+        playbackUi.show(recordings[0]);
         recordButton.hidden = true;
         status.textContent = `Recorded response saved ${new Date(recordings[0].created_at).toLocaleString()}.`;
         time.textContent = formatDuration(recordings[0].duration_seconds || 0);
@@ -1378,6 +1385,77 @@ async function bindSpeakingRecorder(card, question) {
     // Recording remains available for the current page even if history lookup fails.
   }
   window.setTimeout(startSpeakingTask, 300);
+}
+
+function bindRecordedPlayback(card, playback) {
+  const player = card.querySelector(".recorded-player");
+  const toggle = card.querySelector(".recorded-play-toggle");
+  const track = card.querySelector(".recorded-progress-track");
+  const fill = card.querySelector(".recorded-progress-fill");
+  const label = card.querySelector(".recorded-player-time");
+  if (!playback || !player || !toggle || !track || !fill || !label) {
+    return {
+      show(recording) {
+        if (!playback || !recording?.url) return;
+        playback.src = recording.url;
+        playback.hidden = false;
+      },
+    };
+  }
+
+  const update = () => {
+    const duration = Number.isFinite(playback.duration) && playback.duration > 0
+      ? playback.duration
+      : Number(player.dataset.durationSeconds) || 0;
+    const current = Number.isFinite(playback.currentTime) ? playback.currentTime : 0;
+    const percent = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0;
+    fill.style.width = `${percent}%`;
+    label.textContent = `${formatDuration(current)} / ${formatDuration(duration)}`;
+    track.setAttribute("aria-valuenow", String(Math.round(percent)));
+    toggle.textContent = playback.paused ? "▶" : "Ⅱ";
+    toggle.setAttribute("aria-label", playback.paused ? "Play recording" : "Pause recording");
+  };
+
+  toggle.addEventListener("click", async () => {
+    if (!playback.src) return;
+    if (playback.paused) await playback.play();
+    else playback.pause();
+    update();
+  });
+  const seek = (event) => {
+    const duration = Number.isFinite(playback.duration) && playback.duration > 0 ? playback.duration : 0;
+    if (!duration) return;
+    const rect = track.getBoundingClientRect();
+    const percent = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    playback.currentTime = percent * duration;
+    update();
+  };
+  track.addEventListener("click", seek);
+  track.addEventListener("keydown", (event) => {
+    const duration = Number.isFinite(playback.duration) && playback.duration > 0 ? playback.duration : 0;
+    if (!duration || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") playback.currentTime = 0;
+    else if (event.key === "End") playback.currentTime = duration;
+    else playback.currentTime = Math.min(duration, Math.max(0, playback.currentTime + (event.key === "ArrowRight" ? 5 : -5)));
+    update();
+  });
+  playback.addEventListener("loadedmetadata", update);
+  playback.addEventListener("timeupdate", update);
+  playback.addEventListener("play", update);
+  playback.addEventListener("pause", update);
+  playback.addEventListener("ended", update);
+
+  return {
+    show(recording) {
+      if (!recording?.url) return;
+      playback.src = recording.url;
+      player.dataset.durationSeconds = String(recording.duration_seconds || 0);
+      playback.hidden = true;
+      player.hidden = false;
+      update();
+    },
+  };
 }
 
 async function uploadSpeakingRecording(question, blob, duration, status, playback) {

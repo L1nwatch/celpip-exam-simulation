@@ -964,6 +964,56 @@ textarea {
   margin-top: 12px;
 }
 
+.recorded-player {
+  display: grid;
+  grid-template-columns: 34px minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.recorded-player[hidden] {
+  display: none;
+}
+
+.recorded-play-toggle {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.recorded-progress-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d8dee9;
+  cursor: pointer;
+}
+
+.recorded-progress-track:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.recorded-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.recorded-player-time {
+  min-width: 82px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .recorder-status {
   display: block;
   margin-top: 10px;

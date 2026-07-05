@@ -173,6 +173,15 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("result.speaking_assessment", app_js)
         self.assertIn("Speaking submitted. AI grading may take up to a minute.", app_js)
 
+    def test_speaking_uses_custom_recording_player(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('class="recorded-player"', app_js)
+        self.assertIn("function bindRecordedPlayback", app_js)
+        self.assertIn(".recorded-progress-track", styles)
+        self.assertIn(".recorded-progress-fill", styles)
+        self.assertNotIn('<audio class="recorded-playback" controls', app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:
