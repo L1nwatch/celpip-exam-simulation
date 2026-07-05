@@ -622,13 +622,14 @@ function renderSectionResult() {
         ${result.db_attempt_id ? `<button class="retry-writing-assessment" type="button">Grade with AI</button>` : ""}
         <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
     }
-  } else if (result.level) {
+  } else if (result.level || Number.isFinite(result.correct)) {
+    const displayLevel = hasOfficialScoreTotal(state.section, result.total) ? result.level : null;
     const dbLine = result.db_attempt_id
       ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
       : result.db_error
         ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
         : "";
-    box.innerHTML = `<strong>Level ${escapeHtml(result.level)}</strong>
+    box.innerHTML = `<strong>${displayLevel ? `Level ${escapeHtml(displayLevel)}` : "Practice Score"}</strong>
       Raw score: ${result.correct}/${result.total}
       <small>${escapeHtml(result.note)}</small>
       ${dbLine}
@@ -1405,15 +1406,15 @@ async function submitSection() {
       if (isCorrect) correct += 1;
     }
 
-    const level = estimateLevel(state.section, correct);
+    const level = estimateLevel(state.section, correct, choiceQuestions.length);
     state.submissions[state.section] = {
       total: choiceQuestions.length,
       correct,
-      level: level?.level || "M",
+      level: level?.level || null,
       elapsed_seconds: state.timer.elapsed,
       note: level
         ? `Practice estimate using the published raw-score range ${level.min}-${level.max}. Official scores can vary by test form.`
-        : "Practice estimate only.",
+        : "Raw practice score only. This section is too short for a CELPIP level estimate.",
       submitted_at: new Date().toISOString(),
     };
     persist();
@@ -1494,8 +1495,16 @@ function buildSubmissionPayload(submission) {
   };
 }
 
-function estimateLevel(section, correct) {
-  return SCORE_TABLES[section]?.find((row) => correct >= row.min && correct <= row.max);
+function estimateLevel(section, correct, total) {
+  const table = SCORE_TABLES[section];
+  if (!table || !hasOfficialScoreTotal(section, total)) return null;
+  return table.find((row) => correct >= row.min && correct <= row.max);
+}
+
+function hasOfficialScoreTotal(section, total) {
+  const table = SCORE_TABLES[section];
+  if (!table) return false;
+  return total === Math.max(...table.map((row) => row.max));
 }
 
 function renderFeedback(q, message) {
