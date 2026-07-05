@@ -636,6 +636,26 @@ function renderSectionResult() {
         ${result.db_attempt_id ? `<button class="retry-writing-assessment" type="button">Grade with AI</button>` : ""}
         <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
     }
+  } else if (state.section === "speaking") {
+    const assessment = result.speaking_assessment;
+    const dbLine = result.db_attempt_id
+      ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
+      : result.db_error
+        ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
+        : "";
+    if (assessment) {
+      box.innerHTML = `<strong>AI Practice Level ${escapeHtml(assessment.overall_level)}</strong>
+        ${escapeHtml(assessment.summary)}
+        <small>${escapeHtml(assessment.disclaimer || result.note)}</small>
+        ${dbLine}
+        <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
+    } else {
+      box.innerHTML = `<strong>Speaking Saved</strong>
+        ${escapeHtml(result.ai_error || result.note)}
+        ${dbLine}
+        ${result.db_attempt_id ? `<button class="retry-speaking-assessment" type="button">Grade with AI</button>` : ""}
+        <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
+    }
   } else if (result.level || Number.isFinite(result.correct)) {
     const displayLevel = displayLevelForResult(state.section, result);
     const dbLine = result.db_attempt_id
@@ -660,8 +680,10 @@ function renderSectionResult() {
       <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
   }
   bindPracticeAgainButtons(box);
-  const retryButton = box.querySelector(".retry-writing-assessment");
-  if (retryButton) retryButton.addEventListener("click", retryWritingAssessment);
+  const writingRetryButton = box.querySelector(".retry-writing-assessment");
+  if (writingRetryButton) writingRetryButton.addEventListener("click", retryWritingAssessment);
+  const speakingRetryButton = box.querySelector(".retry-speaking-assessment");
+  if (speakingRetryButton) speakingRetryButton.addEventListener("click", retrySpeakingAssessment);
 }
 
 async function retryWritingAssessment() {
@@ -683,6 +705,35 @@ async function retryWritingAssessment() {
     submission.writing_assessment = result.writing_assessment;
     submission.level = String(result.writing_assessment.overall_level);
     submission.note = result.writing_assessment.disclaimer;
+    delete submission.ai_error;
+    persist();
+    await render();
+  } catch (error) {
+    submission.ai_error = error.message || "AI assessment failed.";
+    persist();
+    renderSectionResult();
+  }
+}
+
+async function retrySpeakingAssessment() {
+  const submission = state.submissions.speaking;
+  if (!submission?.db_attempt_id) return;
+  const button = document.querySelector(".retry-speaking-assessment");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Grading...";
+  }
+  try {
+    const response = await fetch("/api/speaking-assessments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attempt_id: submission.db_attempt_id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    submission.speaking_assessment = result.speaking_assessment;
+    submission.level = String(result.speaking_assessment.overall_level);
+    submission.note = result.speaking_assessment.disclaimer;
     delete submission.ai_error;
     persist();
     await render();
@@ -1011,6 +1062,7 @@ function renderQuestionCard(q, strictListening = false) {
       <audio class="recorded-playback" controls hidden></audio>
       <small class="recorder-status">Task starts automatically.</small>
     </div>
+    ${state.submissions.speaking ? speakingAssessmentHtml(q) : ""}
   </section>`;
 }
 
@@ -1029,6 +1081,30 @@ function writingAssessmentHtml(question) {
       <h2>AI Assessment</h2>
       <strong>Estimated Level ${escapeHtml(task.estimated_level)}</strong>
     </div>
+    <div class="writing-criteria">${criteria}</div>
+    <div class="writing-feedback-columns">
+      <div><h3>Strengths</h3><ul>${strengths}</ul></div>
+      <div><h3>Improve Next</h3><ul>${improvements}</ul></div>
+    </div>
+  </section>`;
+}
+
+function speakingAssessmentHtml(question) {
+  const assessment = state.submissions.speaking?.speaking_assessment;
+  const task = assessment?.task_assessments?.find((item) => item.question_key === question.key);
+  if (!task) return "";
+  const criteria = task.criteria.map((criterion) => `<div class="writing-criterion">
+    <div><strong>${escapeHtml(criterion.name)}</strong><span>Level ${escapeHtml(criterion.level)}</span></div>
+    <p>${escapeHtml(criterion.feedback)}</p>
+  </div>`).join("");
+  const strengths = task.strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const improvements = task.improvements.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  return `<section class="writing-assessment" aria-label="AI speaking assessment">
+    <div class="writing-assessment-heading">
+      <h2>AI Assessment</h2>
+      <strong>Estimated Level ${escapeHtml(task.estimated_level)}</strong>
+    </div>
+    <p class="speaking-transcript"><strong>Transcript:</strong> ${escapeHtml(task.transcript)}</p>
     <div class="writing-criteria">${criteria}</div>
     <div class="writing-feedback-columns">
       <div><h3>Strengths</h3><ul>${strengths}</ul></div>
@@ -1421,11 +1497,14 @@ async function submitSection() {
         elapsed_seconds: state.timer.elapsed,
         note: state.section === "writing"
           ? "Writing saved. Requesting an AI practice assessment using CELPIP criteria."
-          : "This section has been saved locally. Speaking needs human or AI rubric scoring.",
+          : state.section === "speaking"
+            ? "Speaking saved. Requesting an AI practice assessment using CELPIP criteria."
+            : "This section has been saved locally.",
         submitted_at: new Date().toISOString(),
       };
       persist();
       if (state.section === "writing") renderFeedback(null, "Writing submitted. AI grading may take up to a minute.");
+      if (state.section === "speaking") renderFeedback(null, "Speaking submitted. AI grading may take up to a minute.");
       await saveSubmissionToDatabase();
       await render();
       return;
@@ -1496,6 +1575,14 @@ async function saveSubmissionToDatabase() {
       delete submission.ai_error;
     } else if (result.writing_assessment_error) {
       submission.ai_error = result.writing_assessment_error;
+    }
+    if (result.speaking_assessment) {
+      submission.speaking_assessment = result.speaking_assessment;
+      submission.level = String(result.speaking_assessment.overall_level);
+      submission.note = result.speaking_assessment.disclaimer;
+      delete submission.ai_error;
+    } else if (result.speaking_assessment_error) {
+      submission.ai_error = result.speaking_assessment_error;
     }
     delete submission.db_error;
   } catch (error) {

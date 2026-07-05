@@ -841,6 +841,16 @@ textarea {
   line-height: 1.5;
 }
 
+.speaking-transcript {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .writing-feedback-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

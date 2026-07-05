@@ -111,6 +111,7 @@ class StaticWebUiTests(unittest.TestCase):
             "/api/drafts",
             "/api/recordings",
             "/api/writing-assessments",
+            "/api/speaking-assessments",
         ):
             with self.subTest(endpoint=endpoint):
                 self.assertIn(endpoint, app_js)
@@ -157,6 +158,14 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");', app_js)
         self.assertIn('"Begin Writing"', app_js)
         self.assertIn('if (!state.submissions.writing && !state.timer.running) toggleTimer();', app_js)
+
+    def test_speaking_has_ai_assessment_flow(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function retrySpeakingAssessment", app_js)
+        self.assertIn('fetch("/api/speaking-assessments"', app_js)
+        self.assertIn("function speakingAssessmentHtml", app_js)
+        self.assertIn("result.speaking_assessment", app_js)
+        self.assertIn("Speaking submitted. AI grading may take up to a minute.", app_js)
 
     def test_javascript_syntax(self):
         node = shutil.which("node")

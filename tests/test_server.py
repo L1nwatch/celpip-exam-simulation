@@ -1,11 +1,26 @@
 import tempfile
 import unittest
+import json
 from io import BytesIO
 from http import HTTPStatus
 from pathlib import Path
 from unittest import mock
 
 import server
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class ServerPersistenceTests(unittest.TestCase):
@@ -178,6 +193,87 @@ class ServerPersistenceTests(unittest.TestCase):
             "Choose one option and explain your reasons.",
             server.clean_writing_prompt(prompt),
         )
+
+    def test_clean_speaking_prompt_removes_timer_text(self):
+        prompt = "Describe a memorable trip. Preparation: 30 seconds Recording: 60 seconds"
+
+        self.assertEqual("Describe a memorable trip.", server.clean_speaking_prompt(prompt))
+
+    def test_request_speaking_assessment_transcribes_and_scores_recordings(self):
+        materials_dir = self.root / "materials" / "private" / "packs"
+        pack = materials_dir / "local_celpip1_test1"
+        pack.mkdir(parents=True)
+        (pack / "questions.json").write_text(
+            json.dumps(
+                {
+                    "questions": [
+                        {
+                            "key": "speaking_q1",
+                            "section": "speaking",
+                            "number": 1,
+                            "question_text": "Describe a memorable trip. Preparation: 30 seconds Recording: 60 seconds",
+                            "timing": {"preparation_seconds": 30, "recording_seconds": 60},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        recording = server.save_recording("local_celpip1_test1", "speaking_q1", "audio/webm", 3.5, b"fake-webm")
+        submission = server.save_submission(
+            {
+                "test_id": "local_celpip1_test1",
+                "section": "speaking",
+                "total_questions": 1,
+                "answered_count": 1,
+                "responses": [
+                    {
+                        "question_key": "speaking_q1",
+                        "answer_value": f"recording:{recording['recording_id']}",
+                        "answer_text": f"recording:{recording['recording_id']}",
+                        "question_number": 1,
+                    }
+                ],
+            }
+        )
+        assessment_payload = {
+            "overall_level": 8,
+            "summary": "Clear response with enough detail.",
+            "task_assessments": [
+                {
+                    "question_key": "speaking_q1",
+                    "task_number": 1,
+                    "estimated_level": 8,
+                    "transcript": "I went to Vancouver and enjoyed the mountains.",
+                    "criteria": [
+                        {"name": "Content/Coherence", "level": 8, "feedback": "Organized and relevant."},
+                        {"name": "Vocabulary", "level": 8, "feedback": "Appropriate range."},
+                        {"name": "Listenability", "level": 8, "feedback": "Easy to follow."},
+                        {"name": "Task Fulfillment", "level": 8, "feedback": "Addresses the task."},
+                    ],
+                    "strengths": ["Relevant details"],
+                    "improvements": ["Add more development"],
+                }
+            ],
+        }
+        api_payload = {
+            "id": "resp_speaking",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps(assessment_payload)}]}],
+        }
+
+        with (
+            mock.patch.object(server, "MATERIALS_DIR", materials_dir),
+            mock.patch.object(server, "transcribe_recording", return_value="I went to Vancouver and enjoyed the mountains."),
+            mock.patch.dict("os.environ", {"OPENAI_API_KEY": "sk-" + "x" * 30}),
+            mock.patch.object(server, "urlopen", return_value=FakeResponse(api_payload)),
+        ):
+            assessment = server.request_speaking_assessment(submission["attempt_id"])
+
+        self.assertEqual(8, assessment["overall_level"])
+        self.assertEqual("gpt-4o-mini-transcribe", assessment["transcription_model"])
+        attempts = server.recent_attempts()
+        self.assertEqual("8", attempts[0]["estimated_level"])
+        self.assertEqual(server.SPEAKING_NOTE, attempts[0]["note"])
 
     def test_handler_blocks_legacy_output_static_routes(self):
         handler = server.Handler.__new__(server.Handler)

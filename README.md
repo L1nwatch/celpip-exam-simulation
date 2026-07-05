@@ -35,10 +35,13 @@ Open:
 http://127.0.0.1:8787/webapp/index.html?view=overview
 ```
 
-Optional AI writing assessment uses:
+Optional AI writing and speaking assessment uses:
 
 ```dotenv
 OPENAI_API_KEY=...
+OPENAI_WRITING_MODEL=gpt-5.4-mini
+OPENAI_SPEAKING_MODEL=gpt-5.4-mini
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 ```
 
 Use `.env` only for local development. In production, inject secrets through your host's secret manager or environment variable settings.
