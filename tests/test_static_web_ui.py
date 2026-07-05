@@ -141,6 +141,8 @@ class StaticWebUiTests(unittest.TestCase):
     def test_short_demo_sections_do_not_show_celpip_level_estimates(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function hasOfficialScoreTotal", app_js)
+        self.assertIn("function displayLevelForResult", app_js)
+        self.assertIn("const level = displayLevelForResult(section.id, result)", app_js)
         self.assertIn("estimateLevel(state.section, correct, choiceQuestions.length)", app_js)
         self.assertIn('level: level?.level || null', app_js)
         self.assertIn('"Practice Score"', app_js)

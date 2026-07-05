@@ -329,7 +329,7 @@ async function showOverview() {
         label = "Completed";
         const result = attempt || localSubmission;
         detail = result.raw_score || (result.correct !== null && result.correct !== undefined ? `${result.correct}/${result.total}` : "Submitted");
-        const level = result.estimated_level || result.level;
+        const level = displayLevelForResult(section.id, result);
         if (level) detail += ` · Level ${level}`;
       } else if (answered > 0) {
         inProgress += 1;
@@ -623,7 +623,7 @@ function renderSectionResult() {
         <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
     }
   } else if (result.level || Number.isFinite(result.correct)) {
-    const displayLevel = hasOfficialScoreTotal(state.section, result.total) ? result.level : null;
+    const displayLevel = displayLevelForResult(state.section, result);
     const dbLine = result.db_attempt_id
       ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
       : result.db_error
@@ -1505,6 +1505,11 @@ function hasOfficialScoreTotal(section, total) {
   const table = SCORE_TABLES[section];
   if (!table) return false;
   return total === Math.max(...table.map((row) => row.max));
+}
+
+function displayLevelForResult(section, result) {
+  if (!result || !hasOfficialScoreTotal(section, result.total ?? result.total_questions)) return null;
+  return result.estimated_level || result.level || null;
 }
 
 function renderFeedback(q, message) {
