@@ -39,8 +39,9 @@ INDEX_HTML = """<!doctype html>
 def public_app_js(source: str) -> str:
     source = re.sub(
         r"const TESTS = Array\.from\(\{ length: 13 \}[\s\S]+?\}\)\.flat\(\);\n\n"
-        r"const MATERIAL_ROOT = \"\.\./materials/private/packs\";",
-        PUBLIC_TESTS,
+        r"const MATERIAL_ROOT = \"\.\./materials/private/packs\";\n"
+        r"const SERVER_API_ENABLED = true;",
+        f"{PUBLIC_TESTS}\nconst SERVER_API_ENABLED = false;",
         source,
         count=1,
     )

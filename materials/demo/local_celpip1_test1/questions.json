@@ -14,7 +14,7 @@
         "id": "pages_listening_demo_short_notice_html",
         "section": "listening",
         "source_file": "pages/listening/demo-short-notice.html",
-        "title": "Demo Listening Notice",
+        "title": "Workplace Notice",
         "media": [
           {
             "type": "video",
@@ -172,7 +172,7 @@
       "source_pages": [
         {
           "file": "pages/listening/demo-short-notice.html",
-          "title": "Demo Listening Notice"
+          "title": "Workplace Notice"
         }
       ],
       "source_file": null,
@@ -243,7 +243,7 @@
       "source_pages": [
         {
           "file": "pages/listening/demo-short-notice.html",
-          "title": "Demo Listening Notice"
+          "title": "Workplace Notice"
         }
       ],
       "source_file": null,
@@ -655,7 +655,7 @@
       "source_pages": [
         {
           "file": "pages/listening/demo-short-notice.html",
-          "title": "Demo Listening Notice"
+          "title": "Workplace Notice"
         }
       ],
       "source_file": null,
@@ -726,7 +726,7 @@
       "source_pages": [
         {
           "file": "pages/listening/demo-short-notice.html",
-          "title": "Demo Listening Notice"
+          "title": "Workplace Notice"
         }
       ],
       "source_file": null,

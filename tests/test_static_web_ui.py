@@ -119,12 +119,14 @@ class StaticWebUiTests(unittest.TestCase):
     def test_public_preview_does_not_reference_private_materials(self):
         preview_js = (self.preview_root / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("../output/", preview_js)
+        self.assertIn("const SERVER_API_ENABLED = false;", preview_js)
         self.assertNotIn("materials/private", preview_js)
         self.assertNotIn("MATERIAL_ROOT", preview_js)
 
     def test_local_app_reads_private_material_packs_not_legacy_output(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn('const MATERIAL_ROOT = "../materials/private/packs";', app_js)
+        self.assertIn("const SERVER_API_ENABLED = true;", app_js)
         self.assertIn("materialUrl(testId", app_js)
         self.assertIn("Object.fromEntries", app_js)
         self.assertNotIn("../output/", app_js)

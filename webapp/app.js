@@ -7,6 +7,7 @@ const TESTS = Array.from({ length: 13 }, (_, index) => {
 }).flat();
 
 const MATERIAL_ROOT = "../materials/private/packs";
+const SERVER_API_ENABLED = true;
 
 const SECTIONS = [
   { id: "listening", label: "Listening", minutes: 47 },
@@ -208,6 +209,7 @@ async function loadTest() {
 }
 
 async function fetchDatabaseDraft(testId) {
+  if (!SERVER_API_ENABLED) return null;
   try {
     const response = await fetch("/api/drafts");
     if (!response.ok) return null;
@@ -231,6 +233,12 @@ async function showHistory() {
   setView("history");
   window.history.replaceState({}, "", `${window.location.pathname}?view=history`);
   document.title = "CELPIP Practice History";
+  if (!SERVER_API_ENABLED) {
+    $("historySummary").textContent = "Browser progress only";
+    $("historyBody").innerHTML = `<tr><td colspan="7">Server history is available only when running the local app server.</td></tr>`;
+    $("historyNotice").textContent = "";
+    return;
+  }
   $("historyBody").innerHTML = `<tr><td colspan="7">Loading saved attempts...</td></tr>`;
   $("historyNotice").textContent = "";
 
@@ -273,18 +281,20 @@ async function showOverview() {
 
   let attempts = [];
   let savedDrafts = [];
-  try {
-    const [submissionResponse, draftResponse] = await Promise.all([
-      fetch("/api/submissions"),
-      fetch("/api/drafts"),
-    ]);
-    if (!submissionResponse.ok || !draftResponse.ok) {
-      throw new Error(`HTTP ${submissionResponse.status}/${draftResponse.status}`);
+  if (SERVER_API_ENABLED) {
+    try {
+      const [submissionResponse, draftResponse] = await Promise.all([
+        fetch("/api/submissions"),
+        fetch("/api/drafts"),
+      ]);
+      if (!submissionResponse.ok || !draftResponse.ok) {
+        throw new Error(`HTTP ${submissionResponse.status}/${draftResponse.status}`);
+      }
+      attempts = (await submissionResponse.json()).attempts || [];
+      savedDrafts = (await draftResponse.json()).drafts || [];
+    } catch (error) {
+      $("overviewNotice").textContent = `SQLite history unavailable; showing browser progress only. ${error.message}`;
     }
-    attempts = (await submissionResponse.json()).attempts || [];
-    savedDrafts = (await draftResponse.json()).drafts || [];
-  } catch (error) {
-    $("overviewNotice").textContent = `SQLite history unavailable; showing browser progress only. ${error.message}`;
   }
 
   const latest = new Map();
@@ -383,6 +393,7 @@ function syncAllLocalDrafts() {
 }
 
 function scheduleDraftSync(testId = state.testId, delay = 600) {
+  if (!SERVER_API_ENABLED) return;
   if (state.draftSyncTimers.has(testId)) {
     window.clearTimeout(state.draftSyncTimers.get(testId));
   }
@@ -396,6 +407,7 @@ function scheduleDraftSync(testId = state.testId, delay = 600) {
 }
 
 async function syncDraftToDatabase(testId = state.testId) {
+  if (!SERVER_API_ENABLED) return;
   const draft = readLocalDraft(testId);
   try {
     const response = await fetch("/api/drafts", {
@@ -530,7 +542,7 @@ function updatePracticeUrl(group) {
 }
 
 function partInstruction(group) {
-  if (state.section === "listening") return "Listen to this conversation or item, then answer the questions in this part.";
+  if (state.section === "listening") return "Listen to the passage, then answer the questions in this part.";
   if (state.section === "reading") return "Read the source material, then answer the questions in this part.";
   return "";
 }
@@ -701,11 +713,13 @@ async function startFreshSection(testId, section) {
   localStorage.setItem(checkedStorageKey(testId), JSON.stringify(draft.checked));
   localStorage.setItem(submissionStorageKey(testId), JSON.stringify(draft.submissions));
   localStorage.setItem(timingStorageKey(testId), JSON.stringify(draft.timings));
-  await fetch("/api/drafts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(draft),
-  });
+  if (SERVER_API_ENABLED) {
+    await fetch("/api/drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+  }
 
   state.testId = testId;
   state.section = section;
@@ -1311,7 +1325,7 @@ async function renderSource(group, showHidden = false) {
   const cacheKey = `${state.testId}:${page}:${showHidden ? "analysis" : "normal"}`;
   if (!state.sourceCache.has(cacheKey)) {
     try {
-      const html = await fetch(sourceUrl(page)).then((r) => r.text());
+      const html = await fetch(sourceUrl(page), { cache: "no-store" }).then((r) => r.text());
       state.sourceCache.set(cacheKey, extractArticle(html, page, showHidden));
     } catch {
       state.sourceCache.set(cacheKey, "<p>Could not load the saved source page.</p>");
@@ -1413,6 +1427,13 @@ async function submitSection() {
 async function saveSubmissionToDatabase() {
   const submission = state.submissions[state.section];
   if (!submission) return;
+  if (!SERVER_API_ENABLED) {
+    delete submission.db_error;
+    delete submission.db_attempt_id;
+    delete submission.db_created_at;
+    persist();
+    return;
+  }
 
   const payload = buildSubmissionPayload(submission);
   try {
