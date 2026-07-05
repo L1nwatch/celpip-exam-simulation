@@ -1,0 +1,42 @@
+# Local secrets/config
+.env
+openai-api.txt
+
+# Python/local runtime artifacts
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Generated extraction/runtime output
+build/
+output/
+*_local_copy.txt
+debug_*.html
+after_login.html
+page.html
+batch_failed_*.txt
+rerun_incomplete_*.log
+
+# Browser/Selenium cache and downloaded drivers
+.cache/
+.selenium-cache/
+chromedriver/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Local backups and private/licensed material
+backups/
+materials/private/
+materials/licensed/
+materials/real/
+
+# Local app state
+webapp/celpip_practice.db
+webapp/recordings/
+webapp/logs/
+*.log

@@ -1,0 +1,18 @@
+{
+  "id": "local_celpip1_test1",
+  "label": "Demo CELPIP-Style Test",
+  "kind": "fake-demo",
+  "license": "Demo content created for this repository. No official CELPIP content is included.",
+  "entry": "questions.json",
+  "sections": {
+    "listening": 2,
+    "reading": 3,
+    "writing": 2,
+    "speaking": 3
+  },
+  "notes": [
+    "This pack exists only to preview the interface on GitHub Pages.",
+    "Use private, legally licensed packs for real practice deployments.",
+    "Includes generated fake audio and SVG image assets for previewing media UI states."
+  ]
+}

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CELPIP Practice Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">C</span>
+      <div>
+        <strong>CELPIP Practice Lab</strong>
+        <span>Local mock practice from saved test data</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="overviewBtn" class="ghost" type="button">Overview</button>
+      <button id="historyBtn" class="ghost" type="button">History</button>
+    </div>
+  </header>
+
+  <main id="overviewView" class="overview-view">
+    <div class="overview-head">
+      <div>
+        <p class="eyebrow">Practice history</p>
+        <h1>Your CELPIP Tests</h1>
+      </div>
+      <div id="overviewSummary" class="overview-summary"></div>
+    </div>
+    <div class="test-matrix-wrap">
+      <table class="test-matrix">
+        <thead>
+          <tr>
+            <th>Test</th>
+            <th>Listening</th>
+            <th>Reading</th>
+            <th>Writing</th>
+            <th>Speaking</th>
+          </tr>
+        </thead>
+        <tbody id="overviewBody"></tbody>
+      </table>
+    </div>
+    <p id="overviewNotice" class="overview-notice"></p>
+  </main>
+
+  <main id="historyView" class="overview-view" hidden>
+    <div class="overview-head">
+      <div>
+        <p class="eyebrow">Saved attempts</p>
+        <h1>Practice History</h1>
+      </div>
+      <div id="historySummary" class="overview-summary"></div>
+    </div>
+    <div class="test-matrix-wrap">
+      <table class="test-matrix history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Test</th>
+            <th>Section</th>
+            <th>Score</th>
+            <th>Level</th>
+            <th>Time</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+    <p id="historyNotice" class="overview-notice"></p>
+  </main>
+
+  <main id="practiceView" class="shell" hidden>
+    <aside class="sidebar">
+      <nav id="sectionTabs" class="section-tabs" aria-label="Sections"></nav>
+      <div class="summary">
+        <div>
+          <span id="answeredCount">0</span>
+          <small>Answered</small>
+        </div>
+        <div>
+          <span id="scoreCount">0</span>
+          <small>Correct</small>
+        </div>
+      </div>
+      <button id="submitSectionBtn" class="submit-section" type="button">Submit Section</button>
+      <div id="sectionResult" class="section-result" hidden></div>
+      <div id="questionNav" class="question-nav" aria-label="Question list"></div>
+    </aside>
+
+    <section class="workspace">
+      <div class="workspace-head">
+        <div>
+          <p id="partLabel" class="eyebrow">Loading</p>
+          <h1 id="questionTitle">CELPIP Practice</h1>
+        </div>
+        <div class="timer" aria-live="polite">
+          <span id="timerLabel">Practice</span>
+          <strong id="timerValue">00:00</strong>
+          <button id="timerBtn" class="icon-btn" type="button" title="Start or pause timer">▶</button>
+        </div>
+      </div>
+
+      <div class="practice-grid">
+        <article class="source-panel">
+          <div class="panel-head">
+            <strong id="sourcePanelTitle">Source</strong>
+            <button id="toggleSourceBtn" class="ghost small" type="button">Hide</button>
+          </div>
+          <div id="sourceContent" class="source-content"></div>
+        </article>
+
+        <article class="question-panel">
+          <div id="mediaArea" class="media-area"></div>
+          <div id="questionText" class="question-text"></div>
+          <div id="answerArea" class="answer-area"></div>
+          <div id="feedback" class="feedback" hidden></div>
+          <div class="controls">
+            <button id="prevBtn" type="button">Previous</button>
+            <button id="nextBtn" type="button">Next</button>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

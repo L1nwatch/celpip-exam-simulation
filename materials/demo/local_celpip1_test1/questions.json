@@ -1,0 +1,1073 @@
+{
+  "source_root": "demo-only",
+  "generated_from": "fake-github-pages-preview",
+  "question_count": 10,
+  "sections": {
+    "listening": 2,
+    "reading": 3,
+    "speaking": 3,
+    "writing": 2
+  },
+  "question_groups": {
+    "listening": [
+      {
+        "id": "pages_listening_demo_short_notice_html",
+        "section": "listening",
+        "source_file": "pages/listening/demo-short-notice.html",
+        "title": "Demo Listening Notice",
+        "media": [
+          {
+            "type": "audio",
+            "path": "assets/audio/demo-listening-notice.wav"
+          }
+        ],
+        "question_keys": [
+          "celpip1_test1_listening_demo_q1",
+          "celpip1_test1_listening_demo_q2"
+        ]
+      }
+    ],
+    "reading": [
+      {
+        "id": "pages_reading_demo_neighbourhood_bulletin_html",
+        "section": "reading",
+        "source_file": "pages/reading/demo-neighbourhood-bulletin.html",
+        "title": "Demo Neighbourhood Bulletin",
+        "media": [
+          {
+            "type": "image",
+            "path": "assets/images/demo-community-board.svg"
+          }
+        ],
+        "question_keys": [
+          "celpip1_test1_reading_demo_q1",
+          "celpip1_test1_reading_demo_q2",
+          "celpip1_test1_reading_demo_q3"
+        ]
+      }
+    ],
+    "writing": [
+      {
+        "id": "pages_writing_demo_writing_email_html",
+        "section": "writing",
+        "source_file": "pages/writing/demo-writing-email.html",
+        "title": "Writing an Email",
+        "media": [],
+        "question_keys": [
+          "celpip1_test1_writing_demo_writing_email"
+        ]
+      },
+      {
+        "id": "pages_writing_demo_survey_response_html",
+        "section": "writing",
+        "source_file": "pages/writing/demo-survey-response.html",
+        "title": "Responding to Survey Questions",
+        "media": [],
+        "question_keys": [
+          "celpip1_test1_writing_demo_survey_response"
+        ]
+      }
+    ],
+    "speaking": [
+      {
+        "id": "pages_speaking_demo_speaking_practice_html",
+        "section": "speaking",
+        "source_file": "pages/speaking/demo-speaking-practice.html",
+        "title": "Speaking Practice",
+        "media": [],
+        "question_keys": [
+          "celpip1_test1_speaking_demo_speaking_practice"
+        ]
+      },
+      {
+        "id": "pages_speaking_demo_giving_advice_html",
+        "section": "speaking",
+        "source_file": "pages/speaking/demo-giving-advice.html",
+        "title": "Task 1: Giving Advice",
+        "media": [
+          {
+            "type": "image",
+            "path": "assets/images/demo-course-choice.svg"
+          }
+        ],
+        "question_keys": [
+          "celpip1_test1_speaking_demo_giving_advice"
+        ]
+      },
+      {
+        "id": "pages_speaking_demo_personal_experience_html",
+        "section": "speaking",
+        "source_file": "pages/speaking/demo-personal-experience.html",
+        "title": "Task 2: Talking About a Personal Experience",
+        "media": [],
+        "question_keys": [
+          "celpip1_test1_speaking_demo_personal_experience"
+        ]
+      }
+    ]
+  },
+  "questions": [
+    {
+      "key": "celpip1_test1_listening_demo_q1",
+      "id": "demo_listening_q1",
+      "number": 1,
+      "question_text": "Question 1 Listen to a short workplace notice. What is the main purpose of the notice?",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_listening_q1_opt1",
+          "label": "1",
+          "text": "to announce a room change",
+          "value": "demo_listening_q1_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_listening_q1_opt2",
+          "label": "2",
+          "text": "to cancel a workshop",
+          "value": "demo_listening_q1_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q1_opt3",
+          "label": "3",
+          "text": "to introduce a new manager",
+          "value": "demo_listening_q1_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q1_opt4",
+          "label": "4",
+          "text": "to request volunteers",
+          "value": "demo_listening_q1_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_listening_q1_opt1"
+      ],
+      "correct_answers": [
+        "to announce a room change"
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: this option best matches the invented prompt.",
+      "media": [],
+      "section": "listening",
+      "source_pages": [
+        {
+          "file": "pages/listening/demo-short-notice.html",
+          "title": "Demo Listening Notice"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_listening_demo_short_notice_html"
+    },
+    {
+      "key": "celpip1_test1_listening_demo_q2",
+      "id": "demo_listening_q2",
+      "number": 2,
+      "question_text": "Question 2 Listen to a short conversation. What will the speakers probably do next?",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_listening_q2_opt1",
+          "label": "1",
+          "text": "order lunch",
+          "value": "demo_listening_q2_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q2_opt2",
+          "label": "2",
+          "text": "check the schedule",
+          "value": "demo_listening_q2_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_listening_q2_opt3",
+          "label": "3",
+          "text": "call a technician",
+          "value": "demo_listening_q2_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q2_opt4",
+          "label": "4",
+          "text": "reserve a meeting room",
+          "value": "demo_listening_q2_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_listening_q2_opt2"
+      ],
+      "correct_answers": [
+        "check the schedule"
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: this option best matches the invented prompt.",
+      "media": [],
+      "section": "listening",
+      "source_pages": [
+        {
+          "file": "pages/listening/demo-short-notice.html",
+          "title": "Demo Listening Notice"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_listening_demo_short_notice_html"
+    },
+    {
+      "key": "celpip1_test1_reading_demo_q1",
+      "id": "demo_reading_q1",
+      "number": 1,
+      "question_text": "1. The bulletin says the garden project needs",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q1_opt1",
+          "label": "1",
+          "text": "more storage space.",
+          "value": "demo_reading_q1_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q1_opt2",
+          "label": "2",
+          "text": "weekday volunteers.",
+          "value": "demo_reading_q1_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q1_opt3",
+          "label": "3",
+          "text": "new safety signs.",
+          "value": "demo_reading_q1_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q1_opt4",
+          "label": "4",
+          "text": "a larger budget.",
+          "value": "demo_reading_q1_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q1_opt2"
+      ],
+      "correct_answers": [
+        "weekday volunteers."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    {
+      "key": "celpip1_test1_reading_demo_q2",
+      "id": "demo_reading_q2",
+      "number": 2,
+      "question_text": "2. Residents who attend the Saturday session should bring",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q2_opt1",
+          "label": "1",
+          "text": "a reusable water bottle.",
+          "value": "demo_reading_q2_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q2_opt2",
+          "label": "2",
+          "text": "their own gardening tools.",
+          "value": "demo_reading_q2_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q2_opt3",
+          "label": "3",
+          "text": "a printed registration form.",
+          "value": "demo_reading_q2_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q2_opt4",
+          "label": "4",
+          "text": "a donation receipt.",
+          "value": "demo_reading_q2_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q2_opt1"
+      ],
+      "correct_answers": [
+        "a reusable water bottle."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    {
+      "key": "celpip1_test1_reading_demo_q3",
+      "id": "demo_reading_q3",
+      "number": 3,
+      "question_text": "3. The library room is being used for",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q3_opt1",
+          "label": "1",
+          "text": "a seed exchange.",
+          "value": "demo_reading_q3_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q3_opt2",
+          "label": "2",
+          "text": "a cooking class.",
+          "value": "demo_reading_q3_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q3_opt3",
+          "label": "3",
+          "text": "a board meeting.",
+          "value": "demo_reading_q3_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q3_opt4",
+          "label": "4",
+          "text": "a children's concert.",
+          "value": "demo_reading_q3_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q3_opt1"
+      ],
+      "correct_answers": [
+        "a seed exchange."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    {
+      "key": "celpip1_test1_writing_demo_writing_email",
+      "id": "demo-writing-email",
+      "number": 1,
+      "question_text": "Read the following information. Your apartment building is planning to replace the bicycle storage area. Write an email to the building manager in about 150-200 words. Your email should explain why the storage area matters, describe one problem with the current space, and suggest two improvements. 26 Minutes",
+      "question_html": "<p>Read the following information. Your apartment building is planning to replace the bicycle storage area. Write an email to the building manager in about 150-200 words. Your email should explain why the storage area matters, describe one problem with the current space, and suggest two improvements.</p><p><strong>26 Minutes</strong></p>",
+      "question_type": "writing_task",
+      "options": [],
+      "timing": {
+        "time_limit_minutes": 26,
+        "word_count_target": {
+          "min": 150,
+          "max": 200
+        }
+      },
+      "media": [],
+      "section": "writing",
+      "source_pages": [
+        {
+          "file": "pages/writing/demo-writing-email.html",
+          "title": "Writing an Email"
+        }
+      ],
+      "source_file": "pages/writing/demo-writing-email.html",
+      "group_id": "pages_writing_demo_writing_email_html"
+    },
+    {
+      "key": "celpip1_test1_writing_demo_survey_response",
+      "id": "demo-survey-response",
+      "number": 2,
+      "question_text": "Read the following information. A local recreation centre is deciding whether to add early morning fitness classes or weekend family activities. Choose the option you prefer. Explain the reasons for your choice and include details from your own experience. 25 Minutes",
+      "question_html": "<p>Read the following information. A local recreation centre is deciding whether to add early morning fitness classes or weekend family activities. Choose the option you prefer. Explain the reasons for your choice and include details from your own experience.</p><p><strong>25 Minutes</strong></p>",
+      "question_type": "writing_task",
+      "options": [],
+      "timing": {
+        "time_limit_minutes": 25,
+        "word_count_target": {
+          "min": 150,
+          "max": 200
+        }
+      },
+      "media": [],
+      "section": "writing",
+      "source_pages": [
+        {
+          "file": "pages/writing/demo-survey-response.html",
+          "title": "Responding to Survey Questions"
+        }
+      ],
+      "source_file": "pages/writing/demo-survey-response.html",
+      "group_id": "pages_writing_demo_survey_response_html"
+    },
+    {
+      "key": "celpip1_test1_speaking_demo_speaking_practice",
+      "id": "demo-speaking-practice",
+      "number": null,
+      "question_text": "Talk about a hobby you enjoy and why it is important to you. Preparation: 30 seconds Recording: 60 seconds",
+      "question_html": "<p>Talk about a hobby you enjoy and why it is important to you.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>60 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 60
+      },
+      "media": [],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-speaking-practice.html",
+          "title": "Speaking Practice"
+        }
+      ],
+      "source_file": "pages/speaking/demo-speaking-practice.html",
+      "group_id": "pages_speaking_demo_speaking_practice_html"
+    },
+    {
+      "key": "celpip1_test1_speaking_demo_giving_advice",
+      "id": "demo-giving-advice",
+      "number": 1,
+      "question_text": "A friend is choosing between taking an online course or an in-person course. Give your friend advice and explain your reasons. Preparation: 30 seconds Recording: 90 seconds",
+      "question_html": "<p>A friend is choosing between taking an online course or an in-person course. Give your friend advice and explain your reasons.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>90 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 90
+      },
+      "media": [
+        {
+          "type": "image",
+          "path": "assets/images/demo-course-choice.svg"
+        }
+      ],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-giving-advice.html",
+          "title": "Task 1: Giving Advice"
+        }
+      ],
+      "source_file": "pages/speaking/demo-giving-advice.html",
+      "group_id": "pages_speaking_demo_giving_advice_html"
+    },
+    {
+      "key": "celpip1_test1_speaking_demo_personal_experience",
+      "id": "demo-personal-experience",
+      "number": 2,
+      "question_text": "Talk about a time when you solved a small problem at work, school, or home. Preparation: 30 seconds Recording: 60 seconds",
+      "question_html": "<p>Talk about a time when you solved a small problem at work, school, or home.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>60 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 60
+      },
+      "media": [],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-personal-experience.html",
+          "title": "Task 2: Talking About a Personal Experience"
+        }
+      ],
+      "source_file": "pages/speaking/demo-personal-experience.html",
+      "group_id": "pages_speaking_demo_personal_experience_html"
+    }
+  ],
+  "questions_by_key": {
+    "celpip1_test1_listening_demo_q1": {
+      "key": "celpip1_test1_listening_demo_q1",
+      "id": "demo_listening_q1",
+      "number": 1,
+      "question_text": "Question 1 Listen to a short workplace notice. What is the main purpose of the notice?",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_listening_q1_opt1",
+          "label": "1",
+          "text": "to announce a room change",
+          "value": "demo_listening_q1_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_listening_q1_opt2",
+          "label": "2",
+          "text": "to cancel a workshop",
+          "value": "demo_listening_q1_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q1_opt3",
+          "label": "3",
+          "text": "to introduce a new manager",
+          "value": "demo_listening_q1_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q1_opt4",
+          "label": "4",
+          "text": "to request volunteers",
+          "value": "demo_listening_q1_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_listening_q1_opt1"
+      ],
+      "correct_answers": [
+        "to announce a room change"
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: this option best matches the invented prompt.",
+      "media": [],
+      "section": "listening",
+      "source_pages": [
+        {
+          "file": "pages/listening/demo-short-notice.html",
+          "title": "Demo Listening Notice"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_listening_demo_short_notice_html"
+    },
+    "celpip1_test1_listening_demo_q2": {
+      "key": "celpip1_test1_listening_demo_q2",
+      "id": "demo_listening_q2",
+      "number": 2,
+      "question_text": "Question 2 Listen to a short conversation. What will the speakers probably do next?",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_listening_q2_opt1",
+          "label": "1",
+          "text": "order lunch",
+          "value": "demo_listening_q2_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q2_opt2",
+          "label": "2",
+          "text": "check the schedule",
+          "value": "demo_listening_q2_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_listening_q2_opt3",
+          "label": "3",
+          "text": "call a technician",
+          "value": "demo_listening_q2_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_listening_q2_opt4",
+          "label": "4",
+          "text": "reserve a meeting room",
+          "value": "demo_listening_q2_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_listening_q2_opt2"
+      ],
+      "correct_answers": [
+        "check the schedule"
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: this option best matches the invented prompt.",
+      "media": [],
+      "section": "listening",
+      "source_pages": [
+        {
+          "file": "pages/listening/demo-short-notice.html",
+          "title": "Demo Listening Notice"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_listening_demo_short_notice_html"
+    },
+    "celpip1_test1_reading_demo_q1": {
+      "key": "celpip1_test1_reading_demo_q1",
+      "id": "demo_reading_q1",
+      "number": 1,
+      "question_text": "1. The bulletin says the garden project needs",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q1_opt1",
+          "label": "1",
+          "text": "more storage space.",
+          "value": "demo_reading_q1_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q1_opt2",
+          "label": "2",
+          "text": "weekday volunteers.",
+          "value": "demo_reading_q1_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q1_opt3",
+          "label": "3",
+          "text": "new safety signs.",
+          "value": "demo_reading_q1_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q1_opt4",
+          "label": "4",
+          "text": "a larger budget.",
+          "value": "demo_reading_q1_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q1_opt2"
+      ],
+      "correct_answers": [
+        "weekday volunteers."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    "celpip1_test1_reading_demo_q2": {
+      "key": "celpip1_test1_reading_demo_q2",
+      "id": "demo_reading_q2",
+      "number": 2,
+      "question_text": "2. Residents who attend the Saturday session should bring",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q2_opt1",
+          "label": "1",
+          "text": "a reusable water bottle.",
+          "value": "demo_reading_q2_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q2_opt2",
+          "label": "2",
+          "text": "their own gardening tools.",
+          "value": "demo_reading_q2_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q2_opt3",
+          "label": "3",
+          "text": "a printed registration form.",
+          "value": "demo_reading_q2_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q2_opt4",
+          "label": "4",
+          "text": "a donation receipt.",
+          "value": "demo_reading_q2_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q2_opt1"
+      ],
+      "correct_answers": [
+        "a reusable water bottle."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    "celpip1_test1_reading_demo_q3": {
+      "key": "celpip1_test1_reading_demo_q3",
+      "id": "demo_reading_q3",
+      "number": 3,
+      "question_text": "3. The library room is being used for",
+      "question_type": "multiple_choice_single",
+      "options": [
+        {
+          "id": "demo_reading_q3_opt1",
+          "label": "1",
+          "text": "a seed exchange.",
+          "value": "demo_reading_q3_value1",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": true
+        },
+        {
+          "id": "demo_reading_q3_opt2",
+          "label": "2",
+          "text": "a cooking class.",
+          "value": "demo_reading_q3_value2",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q3_opt3",
+          "label": "3",
+          "text": "a board meeting.",
+          "value": "demo_reading_q3_value3",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        },
+        {
+          "id": "demo_reading_q3_opt4",
+          "label": "4",
+          "text": "a children's concert.",
+          "value": "demo_reading_q3_value4",
+          "input_type": "radio",
+          "checked": false,
+          "disabled": false,
+          "media": [],
+          "is_correct": false
+        }
+      ],
+      "correct_option_ids": [
+        "demo_reading_q3_opt1"
+      ],
+      "correct_answers": [
+        "a seed exchange."
+      ],
+      "answer_extraction_status": "demo",
+      "explanation": "Demo explanation: the answer is stated in the fake bulletin.",
+      "media": [],
+      "section": "reading",
+      "source_pages": [
+        {
+          "file": "pages/reading/demo-neighbourhood-bulletin.html",
+          "title": "Demo Neighbourhood Bulletin"
+        }
+      ],
+      "source_file": null,
+      "group_id": "pages_reading_demo_neighbourhood_bulletin_html"
+    },
+    "celpip1_test1_writing_demo_writing_email": {
+      "key": "celpip1_test1_writing_demo_writing_email",
+      "id": "demo-writing-email",
+      "number": 1,
+      "question_text": "Read the following information. Your apartment building is planning to replace the bicycle storage area. Write an email to the building manager in about 150-200 words. Your email should explain why the storage area matters, describe one problem with the current space, and suggest two improvements. 26 Minutes",
+      "question_html": "<p>Read the following information. Your apartment building is planning to replace the bicycle storage area. Write an email to the building manager in about 150-200 words. Your email should explain why the storage area matters, describe one problem with the current space, and suggest two improvements.</p><p><strong>26 Minutes</strong></p>",
+      "question_type": "writing_task",
+      "options": [],
+      "timing": {
+        "time_limit_minutes": 26,
+        "word_count_target": {
+          "min": 150,
+          "max": 200
+        }
+      },
+      "media": [],
+      "section": "writing",
+      "source_pages": [
+        {
+          "file": "pages/writing/demo-writing-email.html",
+          "title": "Writing an Email"
+        }
+      ],
+      "source_file": "pages/writing/demo-writing-email.html",
+      "group_id": "pages_writing_demo_writing_email_html"
+    },
+    "celpip1_test1_writing_demo_survey_response": {
+      "key": "celpip1_test1_writing_demo_survey_response",
+      "id": "demo-survey-response",
+      "number": 2,
+      "question_text": "Read the following information. A local recreation centre is deciding whether to add early morning fitness classes or weekend family activities. Choose the option you prefer. Explain the reasons for your choice and include details from your own experience. 25 Minutes",
+      "question_html": "<p>Read the following information. A local recreation centre is deciding whether to add early morning fitness classes or weekend family activities. Choose the option you prefer. Explain the reasons for your choice and include details from your own experience.</p><p><strong>25 Minutes</strong></p>",
+      "question_type": "writing_task",
+      "options": [],
+      "timing": {
+        "time_limit_minutes": 25,
+        "word_count_target": {
+          "min": 150,
+          "max": 200
+        }
+      },
+      "media": [],
+      "section": "writing",
+      "source_pages": [
+        {
+          "file": "pages/writing/demo-survey-response.html",
+          "title": "Responding to Survey Questions"
+        }
+      ],
+      "source_file": "pages/writing/demo-survey-response.html",
+      "group_id": "pages_writing_demo_survey_response_html"
+    },
+    "celpip1_test1_speaking_demo_speaking_practice": {
+      "key": "celpip1_test1_speaking_demo_speaking_practice",
+      "id": "demo-speaking-practice",
+      "number": null,
+      "question_text": "Talk about a hobby you enjoy and why it is important to you. Preparation: 30 seconds Recording: 60 seconds",
+      "question_html": "<p>Talk about a hobby you enjoy and why it is important to you.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>60 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 60
+      },
+      "media": [],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-speaking-practice.html",
+          "title": "Speaking Practice"
+        }
+      ],
+      "source_file": "pages/speaking/demo-speaking-practice.html",
+      "group_id": "pages_speaking_demo_speaking_practice_html"
+    },
+    "celpip1_test1_speaking_demo_giving_advice": {
+      "key": "celpip1_test1_speaking_demo_giving_advice",
+      "id": "demo-giving-advice",
+      "number": 1,
+      "question_text": "A friend is choosing between taking an online course or an in-person course. Give your friend advice and explain your reasons. Preparation: 30 seconds Recording: 90 seconds",
+      "question_html": "<p>A friend is choosing between taking an online course or an in-person course. Give your friend advice and explain your reasons.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>90 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 90
+      },
+      "media": [],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-giving-advice.html",
+          "title": "Task 1: Giving Advice"
+        }
+      ],
+      "source_file": "pages/speaking/demo-giving-advice.html",
+      "group_id": "pages_speaking_demo_giving_advice_html"
+    },
+    "celpip1_test1_speaking_demo_personal_experience": {
+      "key": "celpip1_test1_speaking_demo_personal_experience",
+      "id": "demo-personal-experience",
+      "number": 2,
+      "question_text": "Talk about a time when you solved a small problem at work, school, or home. Preparation: 30 seconds Recording: 60 seconds",
+      "question_html": "<p>Talk about a time when you solved a small problem at work, school, or home.</p><p>Preparation: <strong>30 seconds</strong><br>Recording: <strong>60 seconds</strong></p>",
+      "question_type": "speaking_task",
+      "options": [],
+      "timing": {
+        "preparation_seconds": 30,
+        "recording_seconds": 60
+      },
+      "media": [],
+      "section": "speaking",
+      "source_pages": [
+        {
+          "file": "pages/speaking/demo-personal-experience.html",
+          "title": "Task 2: Talking About a Personal Experience"
+        }
+      ],
+      "source_file": "pages/speaking/demo-personal-experience.html",
+      "group_id": "pages_speaking_demo_personal_experience_html"
+    }
+  },
+  "notes": [
+    "Fake demo content for UI preview only. No official CELPIP material is included."
+  ]
+}
