@@ -618,11 +618,7 @@ function renderSectionResult() {
   box.hidden = false;
   if (state.section === "writing") {
     const assessment = result.writing_assessment;
-    const dbLine = result.db_attempt_id
-      ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
-      : result.db_error
-        ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
-        : "";
+    const dbLine = resultStorageNotice(result);
     if (assessment) {
       box.innerHTML = `<strong>AI Practice Level ${escapeHtml(assessment.overall_level)}</strong>
         ${escapeHtml(assessment.summary)}
@@ -638,11 +634,7 @@ function renderSectionResult() {
     }
   } else if (state.section === "speaking") {
     const assessment = result.speaking_assessment;
-    const dbLine = result.db_attempt_id
-      ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
-      : result.db_error
-        ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
-        : "";
+    const dbLine = resultStorageNotice(result);
     if (assessment) {
       box.innerHTML = `<strong>AI Practice Level ${escapeHtml(assessment.overall_level)}</strong>
         ${escapeHtml(assessment.summary)}
@@ -658,22 +650,14 @@ function renderSectionResult() {
     }
   } else if (result.level || Number.isFinite(result.correct)) {
     const displayLevel = displayLevelForResult(state.section, result);
-    const dbLine = result.db_attempt_id
-      ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
-      : result.db_error
-        ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
-        : "";
+    const dbLine = resultStorageNotice(result);
     box.innerHTML = `<strong>${displayLevel ? `Level ${escapeHtml(displayLevel)}` : "Practice Score"}</strong>
       Raw score: ${result.correct}/${result.total}
       <small>${escapeHtml(result.note)}</small>
       ${dbLine}
       <button class="practice-again" data-test="${state.testId}" data-section="${state.section}" type="button">Practice Again</button>`;
   } else {
-    const dbLine = result.db_attempt_id
-      ? `<small>Saved to SQLite attempt #${result.db_attempt_id}.</small>`
-      : result.db_error
-        ? `<small>Local only: ${escapeHtml(result.db_error)}</small>`
-        : "";
+    const dbLine = resultStorageNotice(result);
     box.innerHTML = `<strong>Saved</strong>
       ${escapeHtml(result.note)}
       ${dbLine}
@@ -684,6 +668,10 @@ function renderSectionResult() {
   if (writingRetryButton) writingRetryButton.addEventListener("click", retryWritingAssessment);
   const speakingRetryButton = box.querySelector(".retry-speaking-assessment");
   if (speakingRetryButton) speakingRetryButton.addEventListener("click", retrySpeakingAssessment);
+}
+
+function resultStorageNotice(result) {
+  return result.db_error ? `<small>Local only: ${escapeHtml(result.db_error)}</small>` : "";
 }
 
 async function retryWritingAssessment() {
