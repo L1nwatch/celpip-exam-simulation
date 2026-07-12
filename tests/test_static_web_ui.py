@@ -136,7 +136,8 @@ class StaticWebUiTests(unittest.TestCase):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function displayGroupTitle", app_js)
         self.assertIn(".replace(/^\\d+\\s+/, \"\")", app_js)
-        self.assertIn('`Part ${state.index + 1}: ${displayTitle}', app_js)
+        self.assertIn("function displayPartLabel", app_js)
+        self.assertIn('`${displayPartLabel()}: ${displayTitle}', app_js)
         self.assertNotIn("`${group.title} · ${group.questions.length}", app_js)
 
     def test_short_demo_sections_do_not_show_celpip_level_estimates(self):
@@ -204,6 +205,16 @@ class StaticWebUiTests(unittest.TestCase):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("group.questions.map((question) => renderQuestionCard(question))", app_js)
         self.assertNotIn("group.questions.map(renderQuestionCard)", app_js)
+
+    def test_late_listening_parts_use_group_timers(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('const LISTENING_PART_LABELS = ["1A", "1B", "1C", "2", "3", "4", "5", "6"]', app_js)
+        self.assertIn('"4": 210', app_js)
+        self.assertIn('"5": 240', app_js)
+        self.assertIn('"6": 260', app_js)
+        self.assertIn("const groupSeconds = listeningGroupTimerSeconds(state.index)", app_js)
+        self.assertIn("function renderListeningQuestionGroup", app_js)
+        self.assertIn("startListeningQuestionTimer(group, seconds, advanceListeningPart)", app_js)
 
     def test_review_answers_are_read_only_but_notes_remain_editable(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

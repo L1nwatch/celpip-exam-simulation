@@ -16,6 +16,13 @@ const SECTIONS = [
   { id: "speaking", label: "Speaking", minutes: 20 },
 ];
 
+const LISTENING_PART_LABELS = ["1A", "1B", "1C", "2", "3", "4", "5", "6"];
+const LISTENING_GROUP_TIMERS = {
+  "4": 210,
+  "5": 240,
+  "6": 260,
+};
+
 const SCORE_TABLES = {
   listening: [
     { level: "10-12", min: 35, max: 38 },
@@ -526,7 +533,7 @@ async function render() {
   const displayTitle = displayGroupTitle(group);
   $("questionTitle").textContent = showSectionIntro
     ? `${SECTIONS.find((item) => item.id === state.section)?.label || "Practice"} Test`
-    : `Part ${state.index + 1}: ${displayTitle} · ${group.questions.length} question${group.questions.length > 1 ? "s" : ""}`;
+    : `${displayPartLabel()}: ${displayTitle} · ${group.questions.length} question${group.questions.length > 1 ? "s" : ""}`;
   const instruction = partInstruction(group);
   $("questionText").textContent = showSectionIntro ? "" : instruction;
   $("questionText").hidden = showSectionIntro || !instruction;
@@ -653,7 +660,7 @@ function renderQuestionNav(groups) {
 }
 
 function groupNavLabel(groups, group, index) {
-  if (state.section === "listening") return ["1A", "1B", "1C", "2", "3", "4", "5", "6"][index] || String(index + 1);
+  if (state.section === "listening") return listeningPartLabel(index);
   if (state.section === "speaking") {
     const number = group.questions[0]?.number;
     if (!number) return "P";
@@ -662,6 +669,19 @@ function groupNavLabel(groups, group, index) {
     return String(number);
   }
   return String(index + 1);
+}
+
+function displayPartLabel(index = state.index) {
+  if (state.section === "listening") return `Part ${listeningPartLabel(index)}`;
+  return `Part ${index + 1}`;
+}
+
+function listeningPartLabel(index = state.index) {
+  return LISTENING_PART_LABELS[index] || String(index + 1);
+}
+
+function listeningGroupTimerSeconds(index = state.index) {
+  return LISTENING_GROUP_TIMERS[listeningPartLabel(index)] || null;
 }
 
 function renderStats() {
@@ -932,6 +952,11 @@ function renderQuestionSet(group, partMedia = []) {
 
   const strictListening = state.section === "listening" && !state.submissions[state.section];
   if (strictListening) {
+    const groupSeconds = listeningGroupTimerSeconds(state.index);
+    if (groupSeconds) {
+      renderListeningQuestionGroup(group, groupSeconds);
+      return;
+    }
     renderListeningQuestion(group);
     return;
   }
@@ -963,13 +988,27 @@ function renderListeningQuestion(group) {
   startListeningQuestionAudio();
 }
 
-function startListeningQuestionTimer(group, seconds) {
+function renderListeningQuestionGroup(group, seconds) {
+  if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
+  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Passage completed</strong><span>${group.questions.length} questions</span></div>`;
+  $("answerArea").innerHTML = `${group.questions.map((question) => renderQuestionCard(question)).join("")}
+    <div class="listening-question-controls">
+      <span>Time remaining: <strong id="listeningQuestionTime">${formatDuration(seconds)}</strong></span>
+      <button id="nextListeningQuestion" type="button">Finish Part</button>
+    </div>`;
+  group.questions.forEach(bindQuestionCard);
+  $("feedback").hidden = true;
+  $("nextListeningQuestion").addEventListener("click", advanceListeningPart);
+  startListeningQuestionTimer(group, seconds, advanceListeningPart);
+}
+
+function startListeningQuestionTimer(group, seconds, onExpire = () => advanceListeningQuestion(group)) {
   let remaining = seconds;
   const output = $("listeningQuestionTime");
   state.listeningQuestionTimer = window.setInterval(() => {
     remaining -= 1;
     if (output) output.textContent = formatDuration(remaining);
-    if (remaining <= 0) advanceListeningQuestion(group);
+    if (remaining <= 0) onExpire();
   }, 1000);
 }
 
@@ -1002,7 +1041,17 @@ function advanceListeningQuestion(group) {
   const nextIndex = (state.listeningQuestionIndex.get(key) || 0) + 1;
   if (nextIndex < group.questions.length) {
     state.listeningQuestionIndex.set(key, nextIndex);
-  } else if (state.index < sectionGroups().length - 1) {
+  } else {
+    advanceListeningPart();
+    return;
+  }
+  render();
+}
+
+function advanceListeningPart() {
+  if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
+  state.listeningQuestionTimer = null;
+  if (state.index < sectionGroups().length - 1) {
     state.index += 1;
   } else {
     submitSection();
