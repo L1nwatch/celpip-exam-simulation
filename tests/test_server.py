@@ -99,6 +99,41 @@ class ServerPersistenceTests(unittest.TestCase):
             attempts[0]["responses"],
         )
 
+    def test_saved_draft_recovers_completed_listening_review_from_history(self):
+        submission = server.save_submission(
+            {
+                "test_id": "local_celpip1_test1",
+                "section": "listening",
+                "total_questions": 1,
+                "answered_count": 1,
+                "correct_count": 1,
+                "estimated_level": "10-12",
+                "note": "Practice estimate.",
+                "responses": [
+                    {
+                        "question_key": "listening_q1",
+                        "answer_value": "A",
+                        "answer_text": "A",
+                        "is_correct": True,
+                    }
+                ],
+            }
+        )
+        server.save_draft(
+            {
+                "test_id": "local_celpip1_test1",
+                "answers": {"listening_q1": "B"},
+                "checked": {},
+                "submissions": {},
+            }
+        )
+
+        draft = server.saved_drafts()[0]
+        self.assertEqual("A", draft["answers"]["listening_q1"])
+        self.assertTrue(draft["checked"]["listening_q1"])
+        self.assertEqual(1, draft["submissions"]["listening"]["correct"])
+        self.assertEqual(submission["attempt_id"], draft["submissions"]["listening"]["db_attempt_id"])
+
     def test_invalid_payloads_raise_value_error(self):
         with self.assertRaisesRegex(ValueError, "Missing required"):
             server.save_submission({"test_id": "local_celpip1_test1"})

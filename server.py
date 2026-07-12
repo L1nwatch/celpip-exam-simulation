@@ -868,14 +868,39 @@ def saved_drafts():
             """
         ).fetchall()
 
+    latest_listening_attempts = {}
+    for attempt in recent_attempts():
+        if attempt["section"] != "listening":
+            continue
+        latest_listening_attempts.setdefault(attempt["test_id"], attempt)
+
     drafts = []
     for row in rows:
+        answers = json.loads(row["answers_json"] or "{}")
+        checked = json.loads(row["checked_json"] or "{}")
+        submissions = json.loads(row["submissions_json"] or "{}")
+        attempt = latest_listening_attempts.get(row["test_id"])
+        if attempt and "listening" not in submissions and attempt["answered_count"] == attempt["total_questions"]:
+            for response in attempt["responses"]:
+                answers[response["question_key"]] = response["answer_value"]
+                checked[response["question_key"]] = response["is_correct"]
+            submissions["listening"] = {
+                "total": attempt["total_questions"],
+                "correct": attempt["correct_count"],
+                "level": attempt["estimated_level"],
+                "elapsed_seconds": attempt["elapsed_seconds"],
+                "note": attempt["note"] or "Recovered from saved practice history.",
+                "submitted_at": attempt["submitted_at"],
+                "db_attempt_id": attempt["id"],
+                "db_created_at": attempt["created_at"],
+                "restored_from_history": True,
+            }
         drafts.append(
             {
                 "test_id": row["test_id"],
-                "answers": json.loads(row["answers_json"] or "{}"),
-                "checked": json.loads(row["checked_json"] or "{}"),
-                "submissions": json.loads(row["submissions_json"] or "{}"),
+                "answers": answers,
+                "checked": checked,
+                "submissions": submissions,
                 "timings": json.loads(row["timings_json"] or "{}"),
                 "notes": json.loads(row["notes_json"] or "{}"),
                 "updated_at": row["updated_at"],
