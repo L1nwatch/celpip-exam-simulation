@@ -110,6 +110,14 @@ function mergeAnswers(databaseAnswers = {}, localAnswers = {}) {
   return answers;
 }
 
+function mergeSubmissions(databaseSubmissions = {}, localSubmissions = {}) {
+  const submissions = { ...localSubmissions };
+  for (const [section, submission] of Object.entries(databaseSubmissions || {})) {
+    if (submission) submissions[section] = submission;
+  }
+  return submissions;
+}
+
 function sectionQuestions() {
   return (state.data?.questions || []).filter((q) => q.section === state.section);
 }
@@ -203,7 +211,7 @@ async function loadTest() {
   const databaseDraft = await fetchDatabaseDraft(state.testId);
   state.answers = mergeAnswers(databaseDraft?.answers, localDraft.answers);
   state.checked = { ...(databaseDraft?.checked || {}), ...localDraft.checked };
-  state.submissions = { ...(databaseDraft?.submissions || {}), ...localDraft.submissions };
+  state.submissions = mergeSubmissions(databaseDraft?.submissions, localDraft.submissions);
   state.timings = { ...(databaseDraft?.timings || {}), ...localDraft.timings };
   state.notes = { ...(databaseDraft?.notes || {}), ...localDraft.notes };
   await restoreListeningReviewFromHistory();
@@ -380,7 +388,7 @@ async function showOverview() {
     const draft = {
       answers: mergeAnswers(databaseDraft.answers, localDraft.answers),
       checked: { ...databaseDraft.checked, ...localDraft.checked },
-      submissions: { ...databaseDraft.submissions, ...localDraft.submissions },
+      submissions: mergeSubmissions(databaseDraft.submissions, localDraft.submissions),
     };
     const cells = SECTIONS.map((section) => {
       const attempt = latest.get(`${test.id}:${section.id}`);
@@ -826,7 +834,7 @@ async function startFreshSection(testId, section) {
     test_id: testId,
     answers: mergeAnswers(databaseDraft?.answers, localDraft.answers),
     checked: { ...(databaseDraft?.checked || {}), ...localDraft.checked },
-    submissions: { ...(databaseDraft?.submissions || {}), ...localDraft.submissions },
+    submissions: mergeSubmissions(databaseDraft?.submissions, localDraft.submissions),
     timings: { ...(databaseDraft?.timings || {}), ...localDraft.timings },
     notes: { ...(databaseDraft?.notes || {}), ...localDraft.notes },
     updated_at: new Date().toISOString(),

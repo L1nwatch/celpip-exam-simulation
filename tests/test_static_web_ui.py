@@ -215,6 +215,8 @@ class StaticWebUiTests(unittest.TestCase):
 
     def test_completed_listening_review_is_restored_from_attempt_history(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function mergeSubmissions", app_js)
+        self.assertIn("state.submissions = mergeSubmissions", app_js)
         self.assertIn("async function restoreListeningReviewFromHistory", app_js)
         self.assertIn("await restoreListeningReviewFromHistory();", app_js)
         self.assertIn('state.submissions.listening = {', app_js)
