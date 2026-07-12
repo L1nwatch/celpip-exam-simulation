@@ -50,6 +50,7 @@ const state = {
   checked: {},
   submissions: {},
   timings: {},
+  notes: {},
   listeningUnlocked: new Set(),
   listeningQuestionIndex: new Map(),
   listeningQuestionTimer: null,
@@ -82,6 +83,10 @@ function submissionStorageKey(testId = state.testId) {
 
 function timingStorageKey(testId = state.testId) {
   return `${storageKey(testId)}:timings`;
+}
+
+function notesStorageKey(testId = state.testId) {
+  return `${storageKey(testId)}:notes`;
 }
 
 function assetUrl(path) {
@@ -200,6 +205,7 @@ async function loadTest() {
   state.checked = { ...(databaseDraft?.checked || {}), ...localDraft.checked };
   state.submissions = { ...(databaseDraft?.submissions || {}), ...localDraft.submissions };
   state.timings = { ...(databaseDraft?.timings || {}), ...localDraft.timings };
+  state.notes = { ...(databaseDraft?.notes || {}), ...localDraft.notes };
   persist({ sync: false });
   scheduleDraftSync(state.testId, 0);
   renderSections();
@@ -384,6 +390,7 @@ function persist({ sync = true } = {}) {
   localStorage.setItem(checkedStorageKey(), JSON.stringify(state.checked));
   localStorage.setItem(submissionStorageKey(), JSON.stringify(state.submissions));
   localStorage.setItem(timingStorageKey(), JSON.stringify(state.timings));
+  localStorage.setItem(notesStorageKey(), JSON.stringify(state.notes));
   if (sync) scheduleDraftSync(state.testId);
 }
 
@@ -394,6 +401,7 @@ function readLocalDraft(testId) {
     checked: JSON.parse(localStorage.getItem(checkedStorageKey(testId)) || "{}"),
     submissions: JSON.parse(localStorage.getItem(submissionStorageKey(testId)) || "{}"),
     timings: JSON.parse(localStorage.getItem(timingStorageKey(testId)) || "{}"),
+    notes: JSON.parse(localStorage.getItem(notesStorageKey(testId)) || "{}"),
     updated_at: new Date().toISOString(),
   };
 }
@@ -402,7 +410,8 @@ function draftHasContent(draft) {
   return Object.keys(draft.answers).length
     || Object.keys(draft.checked).length
     || Object.keys(draft.submissions).length
-    || Object.keys(draft.timings).length;
+    || Object.keys(draft.timings).length
+    || Object.keys(draft.notes).length;
 }
 
 function syncAllLocalDrafts() {
@@ -777,6 +786,7 @@ async function startFreshSection(testId, section) {
     checked: { ...(databaseDraft?.checked || {}), ...localDraft.checked },
     submissions: { ...(databaseDraft?.submissions || {}), ...localDraft.submissions },
     timings: { ...(databaseDraft?.timings || {}), ...localDraft.timings },
+    notes: { ...(databaseDraft?.notes || {}), ...localDraft.notes },
     updated_at: new Date().toISOString(),
   };
   keys.forEach((key) => {
@@ -790,6 +800,7 @@ async function startFreshSection(testId, section) {
   localStorage.setItem(checkedStorageKey(testId), JSON.stringify(draft.checked));
   localStorage.setItem(submissionStorageKey(testId), JSON.stringify(draft.submissions));
   localStorage.setItem(timingStorageKey(testId), JSON.stringify(draft.timings));
+  localStorage.setItem(notesStorageKey(testId), JSON.stringify(draft.notes));
   if (SERVER_API_ENABLED) {
     await fetch("/api/drafts", {
       method: "POST",
@@ -891,7 +902,7 @@ function renderQuestionSet(group, partMedia = []) {
   $("mediaArea").innerHTML = partMedia.length
     ? `<div class="part-media"><strong>Prompt media</strong>${partMedia.map(mediaNode).join("")}</div>`
     : "";
-  $("answerArea").innerHTML = group.questions.map(renderQuestionCard).join("");
+  $("answerArea").innerHTML = group.questions.map((question) => renderQuestionCard(question)).join("");
   group.questions.forEach(bindQuestionCard);
   $("feedback").hidden = true;
 }
@@ -1040,6 +1051,7 @@ function renderQuestionCard(q, strictListening = false) {
       <div class="card-question-text">${escapeHtml(q.question_text || "")}</div>
       <div class="card-options">${options}</div>
       ${submitted ? questionFeedback(q) : ""}
+      ${submitted ? reviewNoteHtml(q) : ""}
     </section>`;
   }
 
@@ -1058,6 +1070,7 @@ function renderQuestionCard(q, strictListening = false) {
       </div>
       ${submitted ? writingAssessmentHtml(q) : ""}
       ${submitted ? responseSamplesHtml(q) : ""}
+      ${submitted ? reviewNoteHtml(q) : ""}
     </section>`;
   }
 
@@ -1081,7 +1094,18 @@ function renderQuestionCard(q, strictListening = false) {
       <small class="recorder-status">Task starts automatically.</small>
     </div>
     ${state.submissions.speaking ? speakingAssessmentHtml(q) : ""}
+    ${state.submissions.speaking ? reviewNoteHtml(q) : ""}
   </section>`;
+}
+
+function reviewNoteHtml(question) {
+  const note = state.notes[question.key] || "";
+  return `<div class="review-note">
+    <label>Review note
+      <textarea class="review-note-input" placeholder="Why did I miss this question? What should I notice next time?">${escapeHtml(note)}</textarea>
+    </label>
+    <small class="review-note-status">Saved automatically</small>
+  </div>`;
 }
 
 function writingAssessmentHtml(question) {
@@ -1217,7 +1241,7 @@ function bindQuestionCard(q) {
       }
     });
   });
-  const textarea = card.querySelector("textarea");
+  const textarea = card.querySelector("textarea.long-response");
   if (textarea) {
     const update = () => {
       state.answers[q.key] = textarea.value;
@@ -1228,6 +1252,20 @@ function bindQuestionCard(q) {
     };
     textarea.addEventListener("input", update);
     update();
+  }
+  const reviewNote = card.querySelector(".review-note-input");
+  if (reviewNote) {
+    let savedTimer;
+    const status = card.querySelector(".review-note-status");
+    reviewNote.addEventListener("input", () => {
+      state.notes[q.key] = reviewNote.value;
+      if (status) status.textContent = "Saving...";
+      persist();
+      window.clearTimeout(savedTimer);
+      savedTimer = window.setTimeout(() => {
+        if (status) status.textContent = "Saved automatically";
+      }, 700);
+    });
   }
   card.querySelectorAll(".response-sample-tab").forEach((button) => {
     button.addEventListener("click", () => {

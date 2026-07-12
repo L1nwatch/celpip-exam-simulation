@@ -1054,6 +1054,30 @@ textarea {
   background: #fff4e9;
 }
 
+.review-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.review-note label {
+  display: grid;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.review-note-input {
+  min-height: 104px;
+  background: #fff;
+  font-weight: 400;
+}
+
+.review-note-status {
+  color: var(--muted);
+}
+
 .feedback.bad,
 .feedback.note {
   border-color: #ecc29d;

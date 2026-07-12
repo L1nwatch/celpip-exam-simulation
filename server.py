@@ -141,6 +141,7 @@ def init_db():
                 checked_json TEXT NOT NULL,
                 submissions_json TEXT NOT NULL,
                 timings_json TEXT NOT NULL DEFAULT '{}',
+                notes_json TEXT NOT NULL DEFAULT '{}',
                 updated_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
@@ -152,6 +153,8 @@ def init_db():
         draft_columns = {row[1] for row in conn.execute("PRAGMA table_info(drafts)")}
         if "timings_json" not in draft_columns:
             conn.execute("ALTER TABLE drafts ADD COLUMN timings_json TEXT NOT NULL DEFAULT '{}'")
+        if "notes_json" not in draft_columns:
+            conn.execute("ALTER TABLE drafts ADD COLUMN notes_json TEXT NOT NULL DEFAULT '{}'")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS speaking_recordings (
@@ -807,22 +810,24 @@ def save_draft(payload):
     checked_json = json.dumps(payload.get("checked") or {}, ensure_ascii=False)
     submissions_json = json.dumps(payload.get("submissions") or {}, ensure_ascii=False)
     timings_json = json.dumps(payload.get("timings") or {}, ensure_ascii=False)
+    notes_json = json.dumps(payload.get("notes") or {}, ensure_ascii=False)
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
             INSERT INTO drafts (
-                test_id, answers_json, checked_json, submissions_json, timings_json, updated_at, created_at
+                test_id, answers_json, checked_json, submissions_json, timings_json, notes_json, updated_at, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(test_id) DO UPDATE SET
                 answers_json=excluded.answers_json,
                 checked_json=excluded.checked_json,
                 submissions_json=excluded.submissions_json,
                 timings_json=excluded.timings_json,
+                notes_json=excluded.notes_json,
                 updated_at=excluded.updated_at
             """,
-            (test_id, answers_json, checked_json, submissions_json, timings_json, updated_at, created_at),
+            (test_id, answers_json, checked_json, submissions_json, timings_json, notes_json, updated_at, created_at),
         )
         conn.commit()
 
@@ -834,7 +839,7 @@ def saved_drafts():
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT test_id, answers_json, checked_json, submissions_json, timings_json, updated_at, created_at
+            SELECT test_id, answers_json, checked_json, submissions_json, timings_json, notes_json, updated_at, created_at
             FROM drafts
             ORDER BY updated_at DESC, test_id ASC
             """
@@ -849,6 +854,7 @@ def saved_drafts():
                 "checked": json.loads(row["checked_json"] or "{}"),
                 "submissions": json.loads(row["submissions_json"] or "{}"),
                 "timings": json.loads(row["timings_json"] or "{}"),
+                "notes": json.loads(row["notes_json"] or "{}"),
                 "updated_at": row["updated_at"],
                 "created_at": row["created_at"],
             }

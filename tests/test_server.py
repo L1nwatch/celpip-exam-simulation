@@ -47,6 +47,7 @@ class ServerPersistenceTests(unittest.TestCase):
                 "checked": {"q1": True},
                 "submissions": {"reading": {"correct": 1}},
                 "timings": {"reading": 123},
+                "notes": {"q1": "I missed the contrast word."},
                 "updated_at": "2026-07-04T12:00:00+00:00",
             }
         )
@@ -58,6 +59,7 @@ class ServerPersistenceTests(unittest.TestCase):
         self.assertEqual({"q1": True}, drafts[0]["checked"])
         self.assertEqual({"reading": {"correct": 1}}, drafts[0]["submissions"])
         self.assertEqual({"reading": 123}, drafts[0]["timings"])
+        self.assertEqual({"q1": "I missed the contrast word."}, drafts[0]["notes"])
 
     def test_save_submission_roundtrip(self):
         result = server.save_submission(

@@ -190,6 +190,21 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("stopPracticePlayback();\n  stopListeningQuestionTimer();\n  setView(\"overview\")", app_js)
         self.assertIn("stopPracticePlayback();\n  stopListeningQuestionTimer();\n  setView(\"history\")", app_js)
 
+    def test_review_notes_are_saved_with_drafts(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        server_py = (ROOT / "server.py").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("function notesStorageKey", app_js)
+        self.assertIn("function reviewNoteHtml", app_js)
+        self.assertIn('card.querySelector(".review-note-input")', app_js)
+        self.assertIn("notes_json", server_py)
+        self.assertIn(".review-note-input", styles)
+
+    def test_review_renders_each_listening_question_without_map_index_leaking(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("group.questions.map((question) => renderQuestionCard(question))", app_js)
+        self.assertNotIn("group.questions.map(renderQuestionCard)", app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:
