@@ -220,7 +220,7 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("async function restoreListeningReviewFromHistory", app_js)
         self.assertIn("await restoreListeningReviewFromHistory();", app_js)
         self.assertIn('state.submissions.listening = {', app_js)
-        self.assertIn("saved?.is_correct ?? Boolean(option?.is_correct)", app_js)
+        self.assertIn('const level = estimateLevel("listening", restoredCorrect, questions.length)', app_js)
         self.assertIn("restored_from_history: true", app_js)
 
     def test_javascript_syntax(self):

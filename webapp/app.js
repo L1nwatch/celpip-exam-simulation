@@ -236,44 +236,31 @@ async function fetchDatabaseDraft(testId) {
 }
 
 async function restoreListeningReviewFromHistory() {
-  if (!SERVER_API_ENABLED || state.section !== "listening" || state.submissions.listening) return false;
+  if (state.section !== "listening" || state.submissions.listening) return false;
   const questions = sectionChoiceQuestions();
   if (!questions.length || !questions.every((question) => state.answers[question.key])) return false;
 
-  try {
-    const response = await fetch("/api/submissions");
-    if (!response.ok) return false;
-    const attempts = (await response.json()).attempts || [];
-    const attempt = attempts.find((item) => item.test_id === state.testId
-      && item.section === "listening");
-    if (!attempt) return false;
-
-    const responses = new Map((attempt.responses || []).map((item) => [item.question_key, item]));
-    let restoredCorrect = 0;
-    questions.forEach((question) => {
-      const saved = responses.get(question.key);
-      if (saved) state.answers[question.key] = saved.answer_value;
-      const selected = state.answers[question.key];
-      const option = question.options.find((item) => item.id === selected || item.value === selected);
-      const isCorrect = saved?.is_correct ?? Boolean(option?.is_correct);
-      state.checked[question.key] = isCorrect;
-      if (isCorrect) restoredCorrect += 1;
-    });
-    state.submissions.listening = {
-      total: attempt.total_questions,
-      correct: attempt.correct_count ?? restoredCorrect,
-      level: attempt.estimated_level,
-      elapsed_seconds: attempt.elapsed_seconds,
-      note: attempt.note || "Recovered from saved practice history.",
-      submitted_at: attempt.submitted_at,
-      db_attempt_id: attempt.id,
-      db_created_at: attempt.created_at,
-      restored_from_history: true,
-    };
-    return true;
-  } catch {
-    return false;
-  }
+  let restoredCorrect = 0;
+  questions.forEach((question) => {
+    const selected = state.answers[question.key];
+    const option = question.options.find((item) => item.id === selected || item.value === selected);
+    const isCorrect = Boolean(option?.is_correct);
+    state.checked[question.key] = isCorrect;
+    if (isCorrect) restoredCorrect += 1;
+  });
+  const level = estimateLevel("listening", restoredCorrect, questions.length);
+  state.submissions.listening = {
+    total: questions.length,
+    correct: restoredCorrect,
+    level: level?.level || null,
+    elapsed_seconds: state.timings.listening?.elapsed_seconds ?? null,
+    note: level
+      ? `Practice estimate using the published raw-score range ${level.min}-${level.max}. Official scores can vary by test form.`
+      : "Recovered from saved practice history.",
+    submitted_at: new Date().toISOString(),
+    restored_from_history: true,
+  };
+  return true;
 }
 
 function setView(view) {
