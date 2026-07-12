@@ -94,6 +94,10 @@ class ServerPersistenceTests(unittest.TestCase):
         self.assertEqual("reading", attempts[0]["section"])
         self.assertEqual("1/1", attempts[0]["raw_score"])
         self.assertEqual(61, attempts[0]["elapsed_seconds"])
+        self.assertEqual(
+            [{"question_key": "reading_q1", "answer_value": "A", "is_correct": True}],
+            attempts[0]["responses"],
+        )
 
     def test_invalid_payloads_raise_value_error(self):
         with self.assertRaisesRegex(ValueError, "Missing required"):

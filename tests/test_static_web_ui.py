@@ -213,6 +213,13 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertNotIn('review-note-input" disabled', app_js)
         self.assertIn(".review-card .option", styles)
 
+    def test_completed_listening_review_is_restored_from_attempt_history(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("async function restoreListeningReviewFromHistory", app_js)
+        self.assertIn("await restoreListeningReviewFromHistory();", app_js)
+        self.assertIn('state.submissions.listening = {', app_js)
+        self.assertIn("restored_from_history: true", app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:

@@ -206,6 +206,7 @@ async function loadTest() {
   state.submissions = { ...(databaseDraft?.submissions || {}), ...localDraft.submissions };
   state.timings = { ...(databaseDraft?.timings || {}), ...localDraft.timings };
   state.notes = { ...(databaseDraft?.notes || {}), ...localDraft.notes };
+  await restoreListeningReviewFromHistory();
   persist({ sync: false });
   scheduleDraftSync(state.testId, 0);
   renderSections();
@@ -223,6 +224,44 @@ async function fetchDatabaseDraft(testId) {
     return drafts.find((draft) => draft.test_id === testId) || null;
   } catch {
     return null;
+  }
+}
+
+async function restoreListeningReviewFromHistory() {
+  if (!SERVER_API_ENABLED || state.section !== "listening" || state.submissions.listening) return false;
+  const questions = sectionChoiceQuestions();
+  if (!questions.length || !questions.every((question) => state.answers[question.key])) return false;
+
+  try {
+    const response = await fetch("/api/submissions");
+    if (!response.ok) return false;
+    const attempts = (await response.json()).attempts || [];
+    const attempt = attempts.find((item) => item.test_id === state.testId
+      && item.section === "listening"
+      && item.responses?.length);
+    if (!attempt) return false;
+
+    const responses = new Map(attempt.responses.map((item) => [item.question_key, item]));
+    if (!questions.every((question) => responses.has(question.key))) return false;
+    questions.forEach((question) => {
+      const saved = responses.get(question.key);
+      state.answers[question.key] = saved.answer_value;
+      state.checked[question.key] = saved.is_correct;
+    });
+    state.submissions.listening = {
+      total: attempt.total_questions,
+      correct: attempt.correct_count,
+      level: attempt.estimated_level,
+      elapsed_seconds: attempt.elapsed_seconds,
+      note: attempt.note || "Recovered from saved practice history.",
+      submitted_at: attempt.submitted_at,
+      db_attempt_id: attempt.id,
+      db_created_at: attempt.created_at,
+      restored_from_history: true,
+    };
+    return true;
+  } catch {
+    return false;
   }
 }
 

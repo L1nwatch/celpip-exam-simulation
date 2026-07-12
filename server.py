@@ -286,7 +286,30 @@ def recent_attempts():
             ORDER BY id DESC
             """
         ).fetchall()
-    return [dict(row) for row in rows]
+        response_rows = conn.execute(
+            """
+            SELECT attempt_id, question_key, answer_value, is_correct
+            FROM responses
+            ORDER BY attempt_id DESC, question_number, id
+            """
+        ).fetchall()
+
+    responses_by_attempt = {}
+    for response in response_rows:
+        responses_by_attempt.setdefault(response["attempt_id"], []).append(
+            {
+                "question_key": response["question_key"],
+                "answer_value": response["answer_value"],
+                "is_correct": None if response["is_correct"] is None else bool(response["is_correct"]),
+            }
+        )
+
+    attempts = []
+    for row in rows:
+        attempt = dict(row)
+        attempt["responses"] = responses_by_attempt.get(row["id"], [])
+        attempts.append(attempt)
+    return attempts
 
 
 def openai_api_key():
