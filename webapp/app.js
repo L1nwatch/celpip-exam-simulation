@@ -1041,11 +1041,11 @@ function renderQuestionCard(q, strictListening = false) {
       const text = option.text ? `<span>${escapeHtml(option.text)}</span>` : "";
       const media = option.media?.length ? `<div class="option-media">${option.media.map(mediaNode).join("")}</div>` : "";
       return `<label class="option ${selected ? "selected" : ""} ${correctness}">
-        <input type="radio" name="${q.key}" value="${option.id}" ${selected ? "checked" : ""}>
+        <input type="radio" name="${q.key}" value="${option.id}" ${selected ? "checked" : ""} ${submitted ? "disabled" : ""}>
         <span>${text}${media}</span>
       </label>`;
     }).join("");
-    return `<section class="question-card" data-key="${q.key}">
+    return `<section class="question-card ${submitted ? "review-card" : ""}" data-key="${q.key}">
       <h2>Question ${questionNumber(q)}</h2>
       ${media}
       <div class="card-question-text">${escapeHtml(q.question_text || "")}</div>

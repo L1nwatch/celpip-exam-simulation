@@ -205,6 +205,14 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("group.questions.map((question) => renderQuestionCard(question))", app_js)
         self.assertNotIn("group.questions.map(renderQuestionCard)", app_js)
 
+    def test_review_answers_are_read_only_but_notes_remain_editable(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('${submitted ? "disabled" : ""}', app_js)
+        self.assertIn('${submitted ? "review-card" : ""}', app_js)
+        self.assertNotIn('review-note-input" disabled', app_js)
+        self.assertIn(".review-card .option", styles)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:

@@ -757,6 +757,22 @@ h1 {
   margin-top: 4px;
 }
 
+.review-card .option {
+  cursor: default;
+}
+
+.review-card .option:hover {
+  border-color: var(--line);
+}
+
+.review-card .option.correct:hover {
+  border-color: var(--good);
+}
+
+.review-card .option.wrong:hover {
+  border-color: var(--bad);
+}
+
 .option-media {
   display: grid;
   gap: 8px;
