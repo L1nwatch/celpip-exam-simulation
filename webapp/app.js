@@ -237,20 +237,23 @@ async function restoreListeningReviewFromHistory() {
     if (!response.ok) return false;
     const attempts = (await response.json()).attempts || [];
     const attempt = attempts.find((item) => item.test_id === state.testId
-      && item.section === "listening"
-      && item.responses?.length);
+      && item.section === "listening");
     if (!attempt) return false;
 
-    const responses = new Map(attempt.responses.map((item) => [item.question_key, item]));
-    if (!questions.every((question) => responses.has(question.key))) return false;
+    const responses = new Map((attempt.responses || []).map((item) => [item.question_key, item]));
+    let restoredCorrect = 0;
     questions.forEach((question) => {
       const saved = responses.get(question.key);
-      state.answers[question.key] = saved.answer_value;
-      state.checked[question.key] = saved.is_correct;
+      if (saved) state.answers[question.key] = saved.answer_value;
+      const selected = state.answers[question.key];
+      const option = question.options.find((item) => item.id === selected || item.value === selected);
+      const isCorrect = saved?.is_correct ?? Boolean(option?.is_correct);
+      state.checked[question.key] = isCorrect;
+      if (isCorrect) restoredCorrect += 1;
     });
     state.submissions.listening = {
       total: attempt.total_questions,
-      correct: attempt.correct_count,
+      correct: attempt.correct_count ?? restoredCorrect,
       level: attempt.estimated_level,
       elapsed_seconds: attempt.elapsed_seconds,
       note: attempt.note || "Recovered from saved practice history.",
