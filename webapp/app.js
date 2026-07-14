@@ -830,7 +830,9 @@ async function startFreshSection(testId, section) {
     delete draft.answers[key];
     delete draft.checked[key];
   });
-  delete draft.submissions[section];
+  // Keep an explicit reset marker so the server does not immediately restore
+  // this section from the latest completed attempt when the draft is reloaded.
+  draft.submissions[section] = null;
   delete draft.timings[section];
 
   localStorage.setItem(storageKey(testId), JSON.stringify(draft.answers));

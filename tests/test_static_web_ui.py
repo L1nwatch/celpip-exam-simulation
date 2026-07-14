@@ -223,6 +223,11 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('const level = estimateLevel("listening", restoredCorrect, questions.length)', app_js)
         self.assertIn("restored_from_history: true", app_js)
 
+    def test_practice_again_explicitly_suppresses_history_recovery(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("draft.submissions[section] = null", app_js)
+        self.assertNotIn("delete draft.submissions[section]", app_js)
+
     def test_javascript_syntax(self):
         node = shutil.which("node")
         if not node:
