@@ -134,6 +134,39 @@ class ServerPersistenceTests(unittest.TestCase):
         self.assertEqual(1, draft["submissions"]["listening"]["correct"])
         self.assertEqual(submission["attempt_id"], draft["submissions"]["listening"]["db_attempt_id"])
 
+    def test_saved_draft_respects_explicit_listening_reset(self):
+        server.save_submission(
+            {
+                "test_id": "local_celpip1_test2",
+                "section": "listening",
+                "total_questions": 1,
+                "answered_count": 1,
+                "correct_count": 1,
+                "estimated_level": "10-12",
+                "responses": [
+                    {
+                        "question_key": "listening_q1",
+                        "answer_value": "A",
+                        "answer_text": "A",
+                        "is_correct": True,
+                    }
+                ],
+            }
+        )
+        server.save_draft(
+            {
+                "test_id": "local_celpip1_test2",
+                "answers": {},
+                "checked": {},
+                "submissions": {"listening": None},
+            }
+        )
+
+        draft = server.saved_drafts()[0]
+        self.assertEqual({}, draft["answers"])
+        self.assertEqual({}, draft["checked"])
+        self.assertIsNone(draft["submissions"]["listening"])
+
     def test_invalid_payloads_raise_value_error(self):
         with self.assertRaisesRegex(ValueError, "Missing required"):
             server.save_submission({"test_id": "local_celpip1_test1"})
