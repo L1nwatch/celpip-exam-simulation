@@ -183,6 +183,18 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn(".recorded-progress-fill", styles)
         self.assertNotIn('<audio class="recorded-playback" controls', app_js)
 
+    def test_listening_passage_progress_is_seekable(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="passageProgressTrack"', app_js)
+        self.assertIn('role="slider"', app_js)
+        self.assertIn("function bindPassageProgressSeek", app_js)
+        self.assertIn('track.addEventListener("pointerdown"', app_js)
+        self.assertIn('track.addEventListener("pointermove"', app_js)
+        self.assertIn("player.currentTime = percent * duration", app_js)
+        self.assertIn("touch-action: none;", styles)
+        self.assertIn(".passage-progress:focus-visible", styles)
+
     def test_leaving_practice_stops_media_playback(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function stopPracticePlayback", app_js)

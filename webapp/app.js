@@ -1080,11 +1080,13 @@ function renderListeningGate(group, media) {
   $("mediaArea").innerHTML = `<div class="listening-gate">
     <p class="eyebrow">Listening passage</p>
     <h2>Questions will appear after the ${isVideo ? "video" : "audio"} finishes.</h2>
-    <p>This passage plays once and cannot be paused or replayed during the attempt.</p>
+    <p>Use the progress bar to choose where playback starts before answering.</p>
     ${isVideo
       ? `<video id="partPassageMedia" src="${src}" preload="metadata" playsinline></video>`
       : `<audio id="partPassageMedia" src="${src}" preload="metadata"></audio>`}
-    <div class="passage-progress"><span id="passageProgressBar"></span></div>
+    <div id="passageProgressTrack" class="passage-progress" role="slider" aria-label="Passage progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+      <span id="passageProgressBar"></span>
+    </div>
     <button id="startPassageBtn" type="button">Start ${isVideo ? "Video" : "Audio"}</button>
     <small id="passageStatus">Use headphones and prepare your notes before starting.</small>
   </div>`;
@@ -1094,7 +1096,15 @@ function renderListeningGate(group, media) {
   const player = $("partPassageMedia");
   const startButton = $("startPassageBtn");
   const status = $("passageStatus");
+  const track = $("passageProgressTrack");
   const progress = $("passageProgressBar");
+  const updateProgress = () => {
+    if (Number.isFinite(player.duration) && player.duration > 0) {
+      const percent = Math.min(100, (player.currentTime / player.duration) * 100);
+      progress.style.width = `${percent}%`;
+      track.setAttribute("aria-valuenow", String(Math.round(percent)));
+    }
+  };
   startButton.addEventListener("click", async () => {
     if (!state.timer.running) toggleTimer();
     startButton.disabled = true;
@@ -1108,16 +1118,50 @@ function renderListeningGate(group, media) {
       status.textContent = `Playback could not start: ${error.message}`;
     }
   });
-  player.addEventListener("timeupdate", () => {
-    if (Number.isFinite(player.duration) && player.duration > 0) {
-      progress.style.width = `${Math.min(100, (player.currentTime / player.duration) * 100)}%`;
-    }
-  });
+  bindPassageProgressSeek(player, track, updateProgress);
+  player.addEventListener("loadedmetadata", updateProgress);
+  player.addEventListener("timeupdate", updateProgress);
   player.addEventListener("ended", () => {
     const key = listeningUnlockKey(group);
     state.listeningUnlocked.add(key);
     state.listeningQuestionIndex.set(key, 0);
     render();
+  });
+}
+
+function bindPassageProgressSeek(player, track, updateProgress) {
+  let dragging = false;
+  const seek = (event) => {
+    const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
+    if (!duration) return;
+    const rect = track.getBoundingClientRect();
+    const percent = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    player.currentTime = percent * duration;
+    updateProgress();
+  };
+  track.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    track.setPointerCapture?.(event.pointerId);
+    seek(event);
+  });
+  track.addEventListener("pointermove", (event) => {
+    if (dragging) seek(event);
+  });
+  track.addEventListener("pointerup", (event) => {
+    dragging = false;
+    track.releasePointerCapture?.(event.pointerId);
+  });
+  track.addEventListener("pointercancel", () => {
+    dragging = false;
+  });
+  track.addEventListener("keydown", (event) => {
+    const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : 0;
+    if (!duration || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") player.currentTime = 0;
+    else if (event.key === "End") player.currentTime = duration;
+    else player.currentTime = Math.min(duration, Math.max(0, player.currentTime + (event.key === "ArrowRight" ? 5 : -5)));
+    updateProgress();
   });
 }
 
