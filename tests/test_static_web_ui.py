@@ -208,13 +208,21 @@ class StaticWebUiTests(unittest.TestCase):
 
     def test_late_listening_parts_use_group_timers(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
         self.assertIn('const LISTENING_PART_LABELS = ["1A", "1B", "1C", "2", "3", "4", "5", "6"]', app_js)
         self.assertIn('"4": 210', app_js)
         self.assertIn('"5": 240', app_js)
         self.assertIn('"6": 260', app_js)
         self.assertIn("const groupSeconds = listeningGroupTimerSeconds(state.index)", app_js)
         self.assertIn("function renderListeningQuestionGroup", app_js)
+        self.assertIn('className = "media-area listening-group-media"', app_js)
+        self.assertIn('class="part-complete listening-group-status"', app_js)
+        self.assertIn('class="listening-group-timer"', app_js)
+        self.assertIn('group.questions.map((question) => renderQuestionCard(question)).join("")', app_js)
         self.assertIn("startListeningQuestionTimer(group, seconds, advanceListeningPart)", app_js)
+        self.assertIn(".listening-group-media", styles)
+        self.assertIn("position: sticky;", styles)
+        self.assertIn(".listening-group-timer", styles)
 
     def test_review_answers_are_read_only_but_notes_remain_editable(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

@@ -542,6 +542,7 @@ async function render() {
   renderStats();
   renderSectionResult();
   updateTimer();
+  $("mediaArea").className = "media-area";
   if (showSpeakingIntro) renderSpeakingIntro(groups);
   else if (showWritingIntro) renderWritingIntro(groups);
   else renderQuestionSet(group, group.media || []);
@@ -992,12 +993,19 @@ function renderListeningQuestion(group) {
 
 function renderListeningQuestionGroup(group, seconds) {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
-  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Passage completed</strong><span>${group.questions.length} questions</span></div>`;
-  $("answerArea").innerHTML = `${group.questions.map((question) => renderQuestionCard(question)).join("")}
-    <div class="listening-question-controls">
-      <span>Time remaining: <strong id="listeningQuestionTime">${formatDuration(seconds)}</strong></span>
+  $("mediaArea").className = "media-area listening-group-media";
+  $("mediaArea").innerHTML = `<div class="part-complete listening-group-status">
+    <div>
+      <strong>Passage completed</strong>
+      <span>${group.questions.length} questions</span>
+    </div>
+    <div class="listening-group-timer">
+      <span>Time remaining</span>
+      <strong id="listeningQuestionTime">${formatDuration(seconds)}</strong>
       <button id="nextListeningQuestion" type="button">Finish Part</button>
-    </div>`;
+    </div>
+  </div>`;
+  $("answerArea").innerHTML = group.questions.map((question) => renderQuestionCard(question)).join("");
   group.questions.forEach(bindQuestionCard);
   $("feedback").hidden = true;
   $("nextListeningQuestion").addEventListener("click", advanceListeningPart);
