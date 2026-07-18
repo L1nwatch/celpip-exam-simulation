@@ -183,17 +183,19 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn(".recorded-progress-fill", styles)
         self.assertNotIn('<audio class="recorded-playback" controls', app_js)
 
-    def test_listening_passage_progress_is_seekable(self):
+    def test_listening_gate_progress_is_read_only_until_review(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
         self.assertIn('id="passageProgressTrack"', app_js)
-        self.assertIn('role="slider"', app_js)
-        self.assertIn("function bindPassageProgressSeek", app_js)
-        self.assertIn('track.addEventListener("pointerdown"', app_js)
-        self.assertIn('track.addEventListener("pointermove"', app_js)
-        self.assertIn("player.currentTime = percent * duration", app_js)
-        self.assertIn("touch-action: none;", styles)
-        self.assertIn(".passage-progress:focus-visible", styles)
+        self.assertIn("This passage plays once and cannot be paused or replayed during the attempt.", app_js)
+        self.assertNotIn("function bindPassageProgressSeek", app_js)
+        self.assertNotIn('id="passageProgressTrack" class="passage-progress" role="slider"', app_js)
+        self.assertNotIn('track.addEventListener("pointerdown"', app_js)
+        self.assertNotIn("player.currentTime = percent * duration", app_js)
+        self.assertNotIn("touch-action: none;", styles)
+        self.assertNotIn(".passage-progress:focus-visible", styles)
+        self.assertIn('if (media.type === "audio") return `<audio controls preload="metadata" src="${src}"></audio>`;', app_js)
+        self.assertIn('if (media.type === "video" || /\\.(mp4|webm)$/i.test(media.path)) return `<video controls src="${src}"></video>`;', app_js)
 
     def test_leaving_practice_stops_media_playback(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

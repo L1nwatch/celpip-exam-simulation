@@ -592,13 +592,6 @@ h1 {
   overflow: hidden;
   border-radius: 4px;
   background: #dce3ea;
-  cursor: pointer;
-  touch-action: none;
-}
-
-.passage-progress:focus-visible {
-  outline: 3px solid rgba(47, 111, 149, .28);
-  outline-offset: 3px;
 }
 
 .passage-progress span {
