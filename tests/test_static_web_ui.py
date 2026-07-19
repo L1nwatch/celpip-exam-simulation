@@ -166,6 +166,18 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('"Begin Writing"', app_js)
         self.assertIn('if (!state.submissions.writing && !state.timer.running) toggleTimer();', app_js)
 
+    def test_reading_uses_independent_part_timers(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);", app_js)
+        self.assertIn("function readingPartTimerSeconds", app_js)
+        self.assertIn("saved.parts?.[state.index] || {}", app_js)
+        self.assertIn("state.timer.partElapsed", app_js)
+        self.assertIn("Reading Part ${state.index + 1} remaining", app_js)
+        self.assertIn("function handleTimerExpired", app_js)
+        self.assertIn('if (state.section === "reading" && !state.submissions.reading)', app_js)
+        self.assertIn("state.index += 1;\n      resetSectionTimer();\n      await render();\n      toggleTimer();", app_js)
+        self.assertIn("parts: {\n        ...(saved.parts || {})", app_js)
+
     def test_speaking_has_ai_assessment_flow(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function retrySpeakingAssessment", app_js)

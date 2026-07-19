@@ -23,6 +23,8 @@ const LISTENING_GROUP_TIMERS = {
   "6": 260,
 };
 
+const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);
+
 const SCORE_TABLES = {
   listening: [
     { level: "10-12", min: 35, max: 38 },
@@ -70,6 +72,7 @@ const state = {
     id: null,
     remaining: 0,
     elapsed: 0,
+    partElapsed: 0,
     running: false,
   },
 };
@@ -1883,9 +1886,11 @@ function renderFeedback(q, message) {
 }
 
 async function moveQuestion(delta) {
+  saveCurrentTiming(false);
   persist({ sync: false });
   syncDraftToDatabase(state.testId);
   state.index = Math.max(0, Math.min(sectionGroups().length - 1, state.index + delta));
+  if (state.section === "reading" && !state.submissions.reading) resetSectionTimer();
   await render();
   resetPracticeScroll();
 }
@@ -1901,9 +1906,23 @@ function resetSectionTimer() {
   const section = SECTIONS.find((item) => item.id === state.section);
   const limit = (section?.minutes || 0) * 60;
   const saved = state.timings[state.section] || {};
+  if (state.section === "reading" && !state.submissions.reading) {
+    const partLimit = readingPartTimerSeconds(state.index);
+    const savedPart = saved.parts?.[state.index] || {};
+    state.timer.elapsed = Math.max(0, Number(saved.elapsed_seconds) || 0);
+    state.timer.partElapsed = Math.max(0, Number(savedPart.elapsed_seconds) || 0);
+    state.timer.remaining = Math.max(0, Number.isFinite(savedPart.remaining_seconds) ? savedPart.remaining_seconds : partLimit - state.timer.partElapsed);
+    updateTimer();
+    return;
+  }
   state.timer.elapsed = Math.max(0, Number(saved.elapsed_seconds) || 0);
+  state.timer.partElapsed = state.timer.elapsed;
   state.timer.remaining = Math.max(0, Number.isFinite(saved.remaining_seconds) ? saved.remaining_seconds : limit - state.timer.elapsed);
   updateTimer();
+}
+
+function readingPartTimerSeconds(index = state.index) {
+  return READING_PART_TIMERS[index] || READING_PART_TIMERS[READING_PART_TIMERS.length - 1];
 }
 
 function toggleTimer() {
@@ -1917,11 +1936,28 @@ function toggleTimer() {
   state.timer.id = window.setInterval(() => {
     state.timer.remaining = Math.max(0, state.timer.remaining - 1);
     state.timer.elapsed += 1;
+    state.timer.partElapsed += 1;
     saveCurrentTiming(false);
     if (state.timer.elapsed % 15 === 0) scheduleDraftSync(state.testId, 0);
     updateTimer();
-    if (state.timer.remaining === 0) stopTimer();
+    if (state.timer.remaining === 0) handleTimerExpired();
   }, 1000);
+}
+
+async function handleTimerExpired() {
+  if (state.section === "reading" && !state.submissions.reading) {
+    stopTimer();
+    if (state.index < sectionGroups().length - 1) {
+      state.index += 1;
+      resetSectionTimer();
+      await render();
+      toggleTimer();
+      return;
+    }
+    submitSection();
+    return;
+  }
+  stopTimer();
 }
 
 function stopTimer() {
@@ -1945,12 +1981,32 @@ function updateTimer() {
     return;
   }
   $("timerBtn").hidden = true;
-  $("timerLabel").textContent = `${SECTIONS.find((item) => item.id === state.section)?.label || "Practice"} remaining`;
+  $("timerLabel").textContent = state.section === "reading" && !state.submissions.reading
+    ? `Reading Part ${state.index + 1} remaining`
+    : `${SECTIONS.find((item) => item.id === state.section)?.label || "Practice"} remaining`;
   $("timerValue").textContent = formatDuration(state.timer.remaining);
 }
 
 function saveCurrentTiming(sync) {
   if (!state.data || state.submissions[state.section]) return;
+  if (state.section === "reading") {
+    const saved = state.timings.reading || {};
+    state.timings.reading = {
+      ...saved,
+      elapsed_seconds: state.timer.elapsed,
+      remaining_seconds: state.timer.remaining,
+      parts: {
+        ...(saved.parts || {}),
+        [state.index]: {
+          elapsed_seconds: state.timer.partElapsed,
+          remaining_seconds: state.timer.remaining,
+        },
+      },
+    };
+    localStorage.setItem(timingStorageKey(), JSON.stringify(state.timings));
+    if (sync) scheduleDraftSync(state.testId, 0);
+    return;
+  }
   state.timings[state.section] = {
     elapsed_seconds: state.timer.elapsed,
     remaining_seconds: state.timer.remaining,
