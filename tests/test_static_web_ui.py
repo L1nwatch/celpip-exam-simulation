@@ -144,12 +144,18 @@ class StaticWebUiTests(unittest.TestCase):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function hasOfficialScoreTotal", app_js)
         self.assertIn("function displayLevelForResult", app_js)
-        self.assertIn("const level = displayLevelForResult(section.id, result)", app_js)
+        self.assertIn("const level = displayLevelForResult(section.id, attempt)", app_js)
         self.assertIn("estimateLevel(state.section, correct, choiceQuestions.length)", app_js)
         self.assertIn('level: level?.level || null', app_js)
         self.assertIn('"Practice Score"', app_js)
         self.assertIn("Raw practice score only. This section is too short for a CELPIP level estimate.", app_js)
         self.assertNotIn('level: level?.level || "M"', app_js)
+
+    def test_overview_shows_saved_ai_levels_for_writing_and_speaking(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('if (["writing", "speaking"].includes(section)) return storedLevel;', app_js)
+        self.assertIn('|| displayLevelForResult(section.id, localSubmission);', app_js)
+        self.assertIn('? `Level ${level}`', app_js)
 
     def test_results_do_not_show_internal_sqlite_attempt_ids(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
@@ -166,16 +172,28 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('"Begin Writing"', app_js)
         self.assertIn('if (!state.submissions.writing && !state.timer.running) toggleTimer();', app_js)
 
+    def test_writing_uses_independent_task_timers(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const WRITING_TASK_TIMERS = [27, 26].map((minutes) => minutes * 60);", app_js)
+        self.assertIn("function writingTaskTimerSeconds", app_js)
+        self.assertIn('return ["reading", "writing"].includes(section) && !state.submissions[section];', app_js)
+        self.assertIn('? `${state.section === "writing" ? "Writing Task" : "Reading Part"}', app_js)
+        self.assertIn("active_part: state.index", app_js)
+        self.assertIn("state.index = resumeTaskIndex;\n    resetSectionTimer();", app_js)
+        self.assertIn("function writingQuestionHtml", app_js)
+        self.assertIn("Time limit: ${taskMinutes} minutes", app_js)
+        self.assertNotIn("Suggested time: ${q.timing.time_limit_minutes} minutes", app_js)
+
     def test_reading_uses_independent_part_timers(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);", app_js)
         self.assertIn("function readingPartTimerSeconds", app_js)
-        self.assertIn("saved.parts?.[state.index] || {}", app_js)
+        self.assertIn("if (saved.parts?.[index]) return saved.parts[index];", app_js)
         self.assertIn("state.timer.partElapsed", app_js)
-        self.assertIn("Reading Part ${state.index + 1} remaining", app_js)
+        self.assertIn('state.section === "writing" ? "Writing Task" : "Reading Part"', app_js)
         self.assertIn("function handleTimerExpired", app_js)
-        self.assertIn('if (state.section === "reading" && !state.submissions.reading)', app_js)
-        self.assertIn("state.index += 1;\n      resetSectionTimer();\n      await render();\n      toggleTimer();", app_js)
+        self.assertIn("if (usesIndependentPartTimer())", app_js)
+        self.assertIn("state.index += 1;\n      resetSectionTimer();\n      saveCurrentTiming(true);\n      await render();\n      toggleTimer();", app_js)
         self.assertIn("parts: {\n        ...(saved.parts || {})", app_js)
 
     def test_speaking_has_ai_assessment_flow(self):

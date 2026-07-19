@@ -24,6 +24,7 @@ const LISTENING_GROUP_TIMERS = {
 };
 
 const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);
+const WRITING_TASK_TIMERS = [27, 26].map((minutes) => minutes * 60);
 
 const SCORE_TABLES = {
   listening: [
@@ -401,9 +402,11 @@ async function showOverview() {
         status = "completed";
         label = "Completed";
         const result = attempt || localSubmission;
-        detail = result.raw_score || (result.correct !== null && result.correct !== undefined ? `${result.correct}/${result.total}` : "Submitted");
-        const level = displayLevelForResult(section.id, result);
-        if (level) detail += ` · Level ${level}`;
+        const level = displayLevelForResult(section.id, attempt)
+          || displayLevelForResult(section.id, localSubmission);
+        detail = level
+          ? `Level ${level}`
+          : result.raw_score || (result.correct !== null && result.correct !== undefined ? `${result.correct}/${result.total}` : "Submitted");
       } else if (answered > 0) {
         inProgress += 1;
         status = "in-progress";
@@ -510,10 +513,10 @@ function renderSections() {
     button.addEventListener("click", async () => {
       stopPracticePlayback();
       stopListeningQuestionTimer();
+      stopTimer();
       state.section = button.dataset.section;
       state.index = 0;
       state.sectionIntro = isIntroSection(state.section);
-      stopTimer();
       resetSectionTimer();
       renderSections();
       await render();
@@ -922,6 +925,10 @@ function renderWritingIntro(groups) {
   const answered = sectionQuestions().filter((question) => state.answers[question.key]).length;
   const elapsed = Number(state.timings.writing?.elapsed_seconds) || 0;
   const hasProgress = answered > 0 || elapsed > 0;
+  const savedTaskIndex = Number(state.timings.writing?.active_part);
+  const resumeTaskIndex = hasProgress && Number.isInteger(savedTaskIndex)
+    ? Math.max(0, Math.min(groups.length - 1, savedTaskIndex))
+    : 0;
   const primaryLabel = hasProgress ? "Continue Writing" : "Begin Writing";
   $("mediaArea").innerHTML = "";
   $("answerArea").innerHTML = `<section class="section-start-panel">
@@ -939,7 +946,8 @@ function renderWritingIntro(groups) {
   const startButton = $("answerArea").querySelector(".start-writing-section");
   startButton.addEventListener("click", async () => {
     state.sectionIntro = false;
-    state.index = 0;
+    state.index = resumeTaskIndex;
+    resetSectionTimer();
     await render();
     if (!state.submissions.writing && !state.timer.running) toggleTimer();
   });
@@ -1163,16 +1171,17 @@ function renderQuestionCard(q, strictListening = false) {
 
   if (q.question_type === "writing_task") {
     const target = q.timing?.word_count_target;
+    const taskMinutes = writingTaskTimerSeconds(state.index) / 60;
     const submitted = Boolean(state.submissions.writing);
     return `<section class="question-card" data-key="${q.key}">
       <h2>Task ${questionNumber(q)}</h2>
       ${taskMedia}
-      <div class="card-question-text structured-prompt">${structuredQuestionHtml(q)}</div>
+      <div class="card-question-text structured-prompt">${writingQuestionHtml(q)}</div>
       <textarea class="long-response" placeholder="Type your response here..." ${submitted ? "readonly" : ""}>${escapeHtml(saved || "")}</textarea>
       <div class="writing-meta">
         <span class="word-count">0 words</span>
         ${target ? `<span>Target: ${target.min}-${target.max} words</span>` : ""}
-        ${q.timing?.time_limit_minutes ? `<span>Suggested time: ${q.timing.time_limit_minutes} minutes</span>` : ""}
+        <span>Time limit: ${taskMinutes} minutes</span>
       </div>
       ${submitted ? writingAssessmentHtml(q) : ""}
       ${submitted ? responseSamplesHtml(q) : ""}
@@ -1301,6 +1310,18 @@ function structuredQuestionHtml(question) {
   if (!question.question_html) return escapeHtml(question.question_text || "");
   const sourceFile = question.source_file || question.source_pages?.[0]?.file;
   return sanitizeStructuredHtml(question.question_html, sourceFile, true);
+}
+
+function writingQuestionHtml(question) {
+  if (!question.question_html) {
+    return escapeHtml((question.question_text || "").replace(/\s+\d+\s*Minutes\s*$/i, ""));
+  }
+  const template = document.createElement("template");
+  template.innerHTML = structuredQuestionHtml(question);
+  const blocks = Array.from(template.content.children);
+  const lastBlock = blocks[blocks.length - 1];
+  if (lastBlock && /^\d+\s*Minutes$/i.test(lastBlock.textContent.trim())) lastBlock.remove();
+  return template.innerHTML;
 }
 
 function responseSamplesHtml(question) {
@@ -1870,8 +1891,11 @@ function hasOfficialScoreTotal(section, total) {
 }
 
 function displayLevelForResult(section, result) {
-  if (!result || !hasOfficialScoreTotal(section, result.total ?? result.total_questions)) return null;
-  return result.estimated_level || result.level || null;
+  if (!result) return null;
+  const storedLevel = result.estimated_level || result.level || null;
+  if (["writing", "speaking"].includes(section)) return storedLevel;
+  if (!hasOfficialScoreTotal(section, result.total ?? result.total_questions)) return null;
+  return storedLevel;
 }
 
 function renderFeedback(q, message) {
@@ -1890,7 +1914,10 @@ async function moveQuestion(delta) {
   persist({ sync: false });
   syncDraftToDatabase(state.testId);
   state.index = Math.max(0, Math.min(sectionGroups().length - 1, state.index + delta));
-  if (state.section === "reading" && !state.submissions.reading) resetSectionTimer();
+  if (usesIndependentPartTimer()) {
+    resetSectionTimer();
+    saveCurrentTiming(true);
+  }
   await render();
   resetPracticeScroll();
 }
@@ -1906,9 +1933,9 @@ function resetSectionTimer() {
   const section = SECTIONS.find((item) => item.id === state.section);
   const limit = (section?.minutes || 0) * 60;
   const saved = state.timings[state.section] || {};
-  if (state.section === "reading" && !state.submissions.reading) {
-    const partLimit = readingPartTimerSeconds(state.index);
-    const savedPart = saved.parts?.[state.index] || {};
+  if (usesIndependentPartTimer()) {
+    const partLimit = independentPartTimerSeconds(state.section, state.index);
+    const savedPart = savedIndependentPartTiming(saved, state.section, state.index, partLimit);
     state.timer.elapsed = Math.max(0, Number(saved.elapsed_seconds) || 0);
     state.timer.partElapsed = Math.max(0, Number(savedPart.elapsed_seconds) || 0);
     state.timer.remaining = Math.max(0, Number.isFinite(savedPart.remaining_seconds) ? savedPart.remaining_seconds : partLimit - state.timer.partElapsed);
@@ -1923,6 +1950,27 @@ function resetSectionTimer() {
 
 function readingPartTimerSeconds(index = state.index) {
   return READING_PART_TIMERS[index] || READING_PART_TIMERS[READING_PART_TIMERS.length - 1];
+}
+
+function writingTaskTimerSeconds(index = state.index) {
+  return WRITING_TASK_TIMERS[index] || WRITING_TASK_TIMERS[WRITING_TASK_TIMERS.length - 1];
+}
+
+function usesIndependentPartTimer(section = state.section) {
+  return ["reading", "writing"].includes(section) && !state.submissions[section];
+}
+
+function independentPartTimerSeconds(section, index = state.index) {
+  return section === "writing" ? writingTaskTimerSeconds(index) : readingPartTimerSeconds(index);
+}
+
+function savedIndependentPartTiming(saved, section, index, partLimit) {
+  if (saved.parts?.[index]) return saved.parts[index];
+  const timers = section === "writing" ? WRITING_TASK_TIMERS : READING_PART_TIMERS;
+  const elapsedBeforePart = timers.slice(0, index).reduce((total, seconds) => total + seconds, 0);
+  const legacyElapsed = Math.max(0, Number(saved.elapsed_seconds) || 0);
+  const partElapsed = Math.min(partLimit, Math.max(0, legacyElapsed - elapsedBeforePart));
+  return { elapsed_seconds: partElapsed, remaining_seconds: partLimit - partElapsed };
 }
 
 function toggleTimer() {
@@ -1945,11 +1993,12 @@ function toggleTimer() {
 }
 
 async function handleTimerExpired() {
-  if (state.section === "reading" && !state.submissions.reading) {
+  if (usesIndependentPartTimer()) {
     stopTimer();
     if (state.index < sectionGroups().length - 1) {
       state.index += 1;
       resetSectionTimer();
+      saveCurrentTiming(true);
       await render();
       toggleTimer();
       return;
@@ -1981,20 +2030,21 @@ function updateTimer() {
     return;
   }
   $("timerBtn").hidden = true;
-  $("timerLabel").textContent = state.section === "reading" && !state.submissions.reading
-    ? `Reading Part ${state.index + 1} remaining`
+  $("timerLabel").textContent = usesIndependentPartTimer()
+    ? `${state.section === "writing" ? "Writing Task" : "Reading Part"} ${state.index + 1} remaining`
     : `${SECTIONS.find((item) => item.id === state.section)?.label || "Practice"} remaining`;
   $("timerValue").textContent = formatDuration(state.timer.remaining);
 }
 
 function saveCurrentTiming(sync) {
   if (!state.data || state.submissions[state.section]) return;
-  if (state.section === "reading") {
-    const saved = state.timings.reading || {};
-    state.timings.reading = {
+  if (["reading", "writing"].includes(state.section)) {
+    const saved = state.timings[state.section] || {};
+    state.timings[state.section] = {
       ...saved,
       elapsed_seconds: state.timer.elapsed,
       remaining_seconds: state.timer.remaining,
+      active_part: state.index,
       parts: {
         ...(saved.parts || {}),
         [state.index]: {
