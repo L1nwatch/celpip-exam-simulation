@@ -216,13 +216,58 @@ class ServerPersistenceTests(unittest.TestCase):
         handler.end_headers = mock.Mock()
 
         path = handler.recording_file_path("/webapp/recordings/sample.webm")
-        handler.send_recording_file(path)
+        handler.headers = {}
+        handler.date_time_string = mock.Mock(return_value="Sat, 25 Jul 2026 20:00:00 GMT")
+        handler.send_media_file(path)
 
         self.assertEqual(recording.resolve(), path)
         handler.send_response.assert_called_once_with(HTTPStatus.OK)
         handler.send_header.assert_any_call("Content-Type", "video/webm")
         handler.send_header.assert_any_call("Content-Length", str(len(b"recording-data")))
+        handler.send_header.assert_any_call("Accept-Ranges", "bytes")
         self.assertEqual(b"recording-data", handler.wfile.getvalue())
+
+    def test_handler_serves_material_media_byte_range(self):
+        materials_dir = self.root / "materials" / "private" / "packs"
+        media = materials_dir / "local_celpip1_test1" / "audio" / "sample.m4a"
+        media.parent.mkdir(parents=True)
+        media.write_bytes(b"0123456789")
+        handler = server.Handler.__new__(server.Handler)
+        handler.wfile = BytesIO()
+        handler.headers = {"Range": "bytes=2-5"}
+        handler.send_response = mock.Mock()
+        handler.send_header = mock.Mock()
+        handler.end_headers = mock.Mock()
+        handler.date_time_string = mock.Mock(return_value="Sat, 25 Jul 2026 20:00:00 GMT")
+
+        with mock.patch.object(server, "MATERIALS_DIR", materials_dir):
+            path = handler.material_media_file_path(
+                "/materials/private/packs/local_celpip1_test1/audio/sample.m4a"
+            )
+            handler.send_media_file(path)
+
+        self.assertEqual(media.resolve(), path)
+        handler.send_response.assert_called_once_with(HTTPStatus.PARTIAL_CONTENT)
+        handler.send_header.assert_any_call("Accept-Ranges", "bytes")
+        handler.send_header.assert_any_call("Content-Range", "bytes 2-5/10")
+        handler.send_header.assert_any_call("Content-Length", "4")
+        self.assertEqual(b"2345", handler.wfile.getvalue())
+
+    def test_handler_rejects_unsatisfiable_media_range(self):
+        media = self.root / "sample.m4a"
+        media.write_bytes(b"0123456789")
+        handler = server.Handler.__new__(server.Handler)
+        handler.wfile = BytesIO()
+        handler.headers = {"Range": "bytes=20-30"}
+        handler.send_response = mock.Mock()
+        handler.send_header = mock.Mock()
+        handler.end_headers = mock.Mock()
+
+        handler.send_media_file(media)
+
+        handler.send_response.assert_called_once_with(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+        handler.send_header.assert_any_call("Content-Range", "bytes */10")
+        self.assertEqual(b"", handler.wfile.getvalue())
 
     def test_handler_rejects_recording_path_traversal(self):
         handler = server.Handler.__new__(server.Handler)

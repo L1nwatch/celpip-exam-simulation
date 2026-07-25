@@ -44,6 +44,7 @@ OPENAI_SPEAKING_MODEL = os.getenv("OPENAI_SPEAKING_MODEL", OPENAI_MODEL)
 OPENAI_TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
 WRITING_NOTE = "AI practice estimate using CELPIP Writing criteria; not an official CELPIP score."
 SPEAKING_NOTE = "AI practice estimate using CELPIP Speaking criteria; not an official CELPIP score."
+MEDIA_EXTENSIONS = {".aac", ".m4a", ".m4v", ".mov", ".mp3", ".mp4", ".ogg", ".wav", ".webm"}
 WRITING_CRITERIA = """CELPIP Writing practice rubric:
 1. Coherence/Meaning: clarity, organization, idea flow, precision, and depth.
 2. Vocabulary: range, accurate word choice, idiomatic combinations, and precision.
@@ -985,14 +986,69 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         return path
 
-    def send_recording_file(self, path):
+    def material_media_file_path(self, request_path):
+        prefix = "/materials/private/packs/"
+        if not request_path.startswith(prefix):
+            return None
+        relative_path = Path(unquote(request_path[len(prefix):]))
+        path = (MATERIALS_DIR / relative_path).resolve()
+        materials_root = MATERIALS_DIR.resolve()
+        if not path.is_relative_to(materials_root) or not path.is_file() or path.suffix.lower() not in MEDIA_EXTENSIONS:
+            return None
+        return path
+
+    def requested_byte_range(self, size):
+        value = self.headers.get("Range")
+        if not value:
+            return None
+        if not value.startswith("bytes=") or "," in value:
+            raise ValueError("Only one byte range is supported")
+        start_text, separator, end_text = value[6:].strip().partition("-")
+        if not separator or not size:
+            raise ValueError("Invalid byte range")
+        if start_text:
+            start = int(start_text)
+            end = int(end_text) if end_text else size - 1
+            if start < 0 or start >= size or end < start:
+                raise ValueError("Invalid byte range")
+            return start, min(end, size - 1)
+        suffix_length = int(end_text)
+        if suffix_length <= 0:
+            raise ValueError("Invalid byte range")
+        return max(0, size - suffix_length), size - 1
+
+    def send_media_file(self, path, *, head_only=False):
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        data = path.read_bytes()
-        self.send_response(HTTPStatus.OK)
+        size = path.stat().st_size
+        try:
+            byte_range = self.requested_byte_range(size)
+        except (TypeError, ValueError):
+            self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            return
+
+        start, end = byte_range or (0, size - 1)
+        self.send_response(HTTPStatus.PARTIAL_CONTENT if byte_range else HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Last-Modified", self.date_time_string(path.stat().st_mtime))
+        if byte_range:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
-        self.wfile.write(data)
+        if head_only:
+            return
+        with path.open("rb") as file:
+            file.seek(start)
+            remaining = end - start + 1
+            while remaining:
+                chunk = file.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def send_json(self, status, body):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -1010,9 +1066,16 @@ class Handler(SimpleHTTPRequestHandler):
         recording_path = self.recording_file_path(parsed.path)
         if parsed.path.startswith("/webapp/recordings/"):
             if recording_path:
-                self.send_recording_file(recording_path)
+                self.send_media_file(recording_path)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND, "Recording was not found")
+            return
+        material_media_path = self.material_media_file_path(parsed.path)
+        if parsed.path.startswith("/materials/private/packs/") and Path(parsed.path).suffix.lower() in MEDIA_EXTENSIONS:
+            if material_media_path:
+                self.send_media_file(material_media_path)
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND, "Media was not found")
             return
         if parsed.path == "/api/submissions":
             self.send_json(HTTPStatus.OK, {"attempts": recent_attempts()})
@@ -1034,6 +1097,24 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
         super().do_GET()
+
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        recording_path = self.recording_file_path(parsed.path)
+        if parsed.path.startswith("/webapp/recordings/"):
+            if recording_path:
+                self.send_media_file(recording_path, head_only=True)
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND, "Recording was not found")
+            return
+        material_media_path = self.material_media_file_path(parsed.path)
+        if parsed.path.startswith("/materials/private/packs/") and Path(parsed.path).suffix.lower() in MEDIA_EXTENSIONS:
+            if material_media_path:
+                self.send_media_file(material_media_path, head_only=True)
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND, "Media was not found")
+            return
+        super().do_HEAD()
 
     def do_POST(self):
         parsed = urlparse(self.path)
