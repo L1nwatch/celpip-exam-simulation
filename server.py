@@ -818,6 +818,17 @@ def request_speaking_assessment(attempt_id):
     return assessment
 
 
+def save_submission_for_api(payload):
+    """Save immediately; only Writing keeps its automatic assessment flow."""
+    result = save_submission(payload)
+    if payload.get("section") == "writing":
+        try:
+            result["writing_assessment"] = request_writing_assessment(result["attempt_id"])
+        except Exception as exc:
+            result["writing_assessment_error"] = str(exc)
+    return result
+
+
 def save_draft(payload):
     required = ["test_id", "answers", "checked", "submissions"]
     missing = [key for key in required if key not in payload]
@@ -1169,17 +1180,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            result = save_submission(payload) if parsed.path == "/api/submissions" else save_draft(payload)
-            if parsed.path == "/api/submissions" and payload.get("section") == "writing":
-                try:
-                    result["writing_assessment"] = request_writing_assessment(result["attempt_id"])
-                except Exception as exc:
-                    result["writing_assessment_error"] = str(exc)
-            if parsed.path == "/api/submissions" and payload.get("section") == "speaking":
-                try:
-                    result["speaking_assessment"] = request_speaking_assessment(result["attempt_id"])
-                except Exception as exc:
-                    result["speaking_assessment_error"] = str(exc)
+            result = save_submission_for_api(payload) if parsed.path == "/api/submissions" else save_draft(payload)
         except ValueError as exc:
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return

@@ -198,11 +198,22 @@ class StaticWebUiTests(unittest.TestCase):
 
     def test_speaking_has_ai_assessment_flow(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("function retrySpeakingAssessment", app_js)
+        index_html = (ROOT / "webapp" / "index.html").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("function gradeSpeakingAssessment", app_js)
         self.assertIn('fetch("/api/speaking-assessments"', app_js)
         self.assertIn("function speakingAssessmentHtml", app_js)
+        self.assertIn("function speakingAssessmentSummaryHtml", app_js)
+        self.assertIn('aria-label="AI speaking scores"', app_js)
+        self.assertIn('aria-label="Task scores"', app_js)
+        self.assertIn('class="grade-speaking-assessment"', app_js)
+        self.assertIn('button.textContent = "Grading..."', app_js)
+        self.assertIn("if (!submission.db_attempt_id)", app_js)
         self.assertIn("result.speaking_assessment", app_js)
-        self.assertIn("Speaking submitted. AI grading may take up to a minute.", app_js)
+        self.assertIn("Speaking saved. Select Grade with AI when you are ready for scores.", app_js)
+        self.assertIn(".speaking-score-summary", styles)
+        self.assertIn(".grade-speaking-assessment", styles)
+        self.assertIn('id="sectionResult" class="section-result" aria-live="polite"', index_html)
 
     def test_speaking_section_timer_starts_and_resumes(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

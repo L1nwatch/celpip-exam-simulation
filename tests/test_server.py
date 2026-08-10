@@ -394,6 +394,17 @@ class ServerPersistenceTests(unittest.TestCase):
         self.assertEqual("8", attempts[0]["estimated_level"])
         self.assertEqual(server.SPEAKING_NOTE, attempts[0]["note"])
 
+    def test_speaking_submission_is_saved_without_automatic_ai_assessment(self):
+        with (
+            mock.patch.object(server, "save_submission", return_value={"attempt_id": 42}) as save_mock,
+            mock.patch.object(server, "request_speaking_assessment") as assessment_mock,
+        ):
+            result = server.save_submission_for_api({"section": "speaking"})
+
+        self.assertEqual({"attempt_id": 42}, result)
+        save_mock.assert_called_once_with({"section": "speaking"})
+        assessment_mock.assert_not_called()
+
     def test_handler_blocks_legacy_output_static_routes(self):
         handler = server.Handler.__new__(server.Handler)
         handler.path = "/output/local_celpip1_test1/questions.json"

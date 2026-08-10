@@ -290,12 +290,87 @@ button:disabled {
   margin-top: 10px;
 }
 
-.section-result > .retry-writing-assessment {
+.section-result > .retry-writing-assessment,
+.section-result > .grade-speaking-assessment {
   width: 100%;
   margin-top: 10px;
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.speaking-score-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.speaking-score-overall {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 7px;
+  background: #eaf1f8;
+}
+
+.speaking-score-overall span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section-result .speaking-score-overall strong {
+  margin: 0;
+  color: var(--accent);
+  font-size: 28px;
+}
+
+.speaking-score-criteria {
+  display: grid;
+  gap: 6px;
+}
+
+.speaking-score-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.section-result .speaking-score-row strong {
+  flex: none;
+  margin: 0;
+  font-size: 12px;
+}
+
+.speaking-task-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.speaking-task-score {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 11px;
+}
+
+.section-result .speaking-task-score strong {
+  display: inline;
+  margin: 0 0 0 3px;
+  color: var(--accent);
+  font-size: inherit;
+}
+
+.speaking-score-summary-text {
+  margin: 10px 0 0;
 }
 
 .section-start-panel {
