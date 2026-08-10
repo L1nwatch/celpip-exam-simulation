@@ -211,6 +211,34 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("if (!state.submissions.speaking && !state.timer.running) toggleTimer();", app_js)
         self.assertIn('state.timings[state.section] = {\n    elapsed_seconds: state.timer.elapsed,', app_js)
 
+    def test_speaking_choice_step_is_selectable_without_recording(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("function isSpeakingChoiceStep", app_js)
+        self.assertIn("you do not need to speak for this part", app_js)
+        self.assertIn('class="speaking-choice-selector"', app_js)
+        self.assertIn("async function bindSpeakingChoiceSelector", app_js)
+        self.assertIn('state.answers[question.key] = `choice:${safeIndex}:${encodeURIComponent(labels[safeIndex])}`', app_js)
+        self.assertIn("choiceUi?.ensureSelection();", app_js)
+        self.assertIn(".speaking-choice-button.selected", styles)
+        self.assertIn("function speakingChoiceCarryoverHtml", app_js)
+        self.assertIn('class="speaking-choice-carryover"', app_js)
+        self.assertIn(".speaking-choice-carryover", styles)
+
+    def test_speaking_choice_step_is_ordered_before_persuasion(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function orderSpeakingChoiceGroups", app_js)
+        self.assertIn("const choiceIndex = groups.findIndex", app_js)
+        self.assertIn("question.number === choiceQuestion.number", app_js)
+        self.assertIn("ordered.splice(persuasionIndex, 0, choiceGroup)", app_js)
+
+    def test_speaking_missing_recording_metadata_uses_a_safe_fallback(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function speakingRecordingSeconds", app_js)
+        self.assertIn("if (explicitSeconds || isSpeakingChoiceStep(question)) return explicitSeconds;", app_js)
+        self.assertIn('question.section === "speaking" && Number(question.timing?.preparation_seconds) > 0 ? 60 : 0', app_js)
+        self.assertIn("const limit = speakingRecordingSeconds(question);", app_js)
+
     def test_speaking_uses_custom_recording_player(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")

@@ -138,11 +138,12 @@ function sectionGroups() {
     || Object.fromEntries((state.data?.questions || []).map((question) => [question.key, question]));
   const jsonGroups = state.data?.question_groups?.[state.section];
   if (jsonGroups?.length) {
-    return jsonGroups.map((group) => ({
+    const mappedGroups = jsonGroups.map((group) => ({
       ...group,
       page: group.source_file,
       questions: group.question_keys.map((key) => questionsByKey[key]).filter(Boolean),
     }));
+    return orderSpeakingChoiceGroups(mappedGroups);
   }
 
   const groups = [];
@@ -162,7 +163,21 @@ function sectionGroups() {
     }
     byPage.get(page).questions.push(q);
   }
-  return groups;
+  return orderSpeakingChoiceGroups(groups);
+}
+
+function orderSpeakingChoiceGroups(groups) {
+  if (state.section !== "speaking") return groups;
+  const choiceIndex = groups.findIndex((group) => group.questions.some(isSpeakingChoiceStep));
+  if (choiceIndex < 0) return groups;
+  const choiceQuestion = groups[choiceIndex].questions.find(isSpeakingChoiceStep);
+  const persuasionIndex = groups.findIndex((group, index) => index !== choiceIndex
+    && group.questions.some((question) => question.number === choiceQuestion.number));
+  if (persuasionIndex < 0 || choiceIndex < persuasionIndex) return groups;
+  const ordered = [...groups];
+  const [choiceGroup] = ordered.splice(choiceIndex, 1);
+  ordered.splice(persuasionIndex, 0, choiceGroup);
+  return ordered;
 }
 
 function currentGroup() {
@@ -1193,10 +1208,17 @@ function renderQuestionCard(q, strictListening = false) {
     </section>`;
   }
 
+  const speakingChoiceStep = isSpeakingChoiceStep(q);
   return `<section class="question-card" data-key="${q.key}">
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
     ${taskMedia}
     <div class="card-question-text structured-prompt">${structuredQuestionHtml(q)}</div>
+    ${speakingChoiceCarryoverHtml(q)}
+    ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="Choose an option">
+      <strong>No recording in this step</strong>
+      <p>Choose one option now. You will use it in the next speaking step.</p>
+      <div class="speaking-choice-options"><span>Loading options...</span></div>
+    </section>` : ""}
     <div class="speaking-recorder">
       <div class="recorder-actions">
         <button class="record-response" type="button" hidden>Enable Microphone</button>
@@ -1322,6 +1344,106 @@ function structuredQuestionHtml(question) {
   return sanitizeStructuredHtml(question.question_html, sourceFile, true);
 }
 
+function isSpeakingChoiceStep(question) {
+  return question.section === "speaking"
+    && /you do not need to speak for this part/i.test(question.question_text || "");
+}
+
+function speakingRecordingSeconds(question) {
+  const explicitSeconds = Math.max(0, Number(question.timing?.recording_seconds) || 0);
+  if (explicitSeconds || isSpeakingChoiceStep(question)) return explicitSeconds;
+  return question.section === "speaking" && Number(question.timing?.preparation_seconds) > 0 ? 60 : 0;
+}
+
+function speakingChoiceIndex(answer) {
+  const match = /^choice:(\d+)(?::|$)/.exec(String(answer || ""));
+  return match ? Number(match[1]) : null;
+}
+
+function speakingChoiceLabel(answer) {
+  const match = /^choice:\d+:(.+)$/.exec(String(answer || ""));
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function speakingChoiceCarryoverHtml(question) {
+  if (question.section !== "speaking" || isSpeakingChoiceStep(question)) return "";
+  const groups = sectionGroups();
+  const groupIndex = groups.findIndex((group) => group.questions.some((item) => item.key === question.key));
+  const previousQuestion = groupIndex > 0 ? groups[groupIndex - 1].questions.find(isSpeakingChoiceStep) : null;
+  const label = previousQuestion ? speakingChoiceLabel(state.answers[previousQuestion.key]) : "";
+  return label ? `<aside class="speaking-choice-carryover">
+    <span>Your selected option</span>
+    <strong>${escapeHtml(label)}</strong>
+  </aside>` : "";
+}
+
+async function bindSpeakingChoiceSelector(card, question, status) {
+  const selector = card.querySelector(".speaking-choice-options");
+  if (!selector) return null;
+
+  let optionCells = Array.from(card.querySelectorAll(".structured-prompt table.kouyutable tr"))
+    .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD"))
+    .find((cells) => cells.length >= 2) || [];
+  if (optionCells.length < 2 && question.source_file) {
+    try {
+      const html = await fetch(sourceUrl(question.source_file), { cache: "no-store" }).then((response) => response.text());
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      optionCells = Array.from(doc.querySelectorAll("table.kouyutable tr"))
+        .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD"))
+        .find((cells) => cells.length >= 2) || [];
+    } catch {
+      // Generic labels remain usable if the saved source page cannot be loaded.
+    }
+  }
+
+  const labels = [0, 1].map((index) => {
+    const cell = optionCells[index];
+    const emphasized = cell?.querySelector("strong, b, [style*='font-weight: bold']");
+    return emphasized?.textContent?.trim() || `Option ${index + 1}`;
+  });
+  selector.innerHTML = labels.map((label, index) => `
+    <button class="speaking-choice-button" type="button" data-choice-index="${index}" aria-pressed="false">
+      <span>Option ${index + 1}</span>
+      <strong>${escapeHtml(label)}</strong>
+    </button>`).join("");
+  const buttons = Array.from(selector.querySelectorAll(".speaking-choice-button"));
+
+  const select = (index, automatic = false) => {
+    const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+    buttons.forEach((button, buttonIndex) => {
+      const selected = buttonIndex === safeIndex;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    state.answers[question.key] = `choice:${safeIndex}:${encodeURIComponent(labels[safeIndex])}`;
+    status.textContent = automatic
+      ? `No option was selected, so ${labels[safeIndex]} was chosen automatically.`
+      : `${labels[safeIndex]} selected. Use the remaining time to prepare.`;
+    persist();
+    renderStats();
+    return safeIndex;
+  };
+
+  buttons.forEach((button, index) => button.addEventListener("click", () => select(index)));
+  const savedIndex = speakingChoiceIndex(state.answers[question.key]);
+  if (savedIndex !== null && savedIndex < buttons.length) {
+    buttons[savedIndex].classList.add("selected");
+    buttons[savedIndex].setAttribute("aria-pressed", "true");
+  }
+
+  return {
+    ensureSelection() {
+      const currentIndex = speakingChoiceIndex(state.answers[question.key]);
+      return currentIndex === null ? select(Math.floor(Math.random() * buttons.length), true) : currentIndex;
+    },
+  };
+}
+
 function writingQuestionHtml(question) {
   if (!question.question_html) {
     return escapeHtml((question.question_text || "").replace(/\s+\d+\s*Minutes\s*$/i, ""));
@@ -1428,12 +1550,14 @@ async function bindSpeakingRecorder(card, question) {
   const status = card.querySelector(".recorder-status");
   const time = card.querySelector(".recording-time");
   const recordingIndicator = card.querySelector(".recording-indicator");
+  const choiceStep = isSpeakingChoiceStep(question);
+  const choiceUi = choiceStep ? await bindSpeakingChoiceSelector(card, question, status) : null;
   if (state.submissions.speaking) {
     recordButton.hidden = true;
     status.textContent = "Loading recorded response...";
   }
   const prep = question.timing?.preparation_seconds || 0;
-  const limit = question.timing?.recording_seconds || 0;
+  const limit = speakingRecordingSeconds(question);
   if (!recordButton || (limit && (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder))) {
     if (recordButton) recordButton.disabled = true;
     status.textContent = "Audio recording is not supported by this browser.";
@@ -1496,7 +1620,8 @@ async function bindSpeakingRecorder(card, question) {
     preparationComplete = true;
     if (!limit) {
       stream?.getTracks().forEach((track) => track.stop());
-      state.answers[question.key] = "preparation-complete";
+      if (choiceStep) choiceUi?.ensureSelection();
+      if (!state.answers[question.key]) state.answers[question.key] = "preparation-complete";
       persist();
       advanceSpeakingTask();
       return;
@@ -1527,14 +1652,14 @@ async function bindSpeakingRecorder(card, question) {
   };
 
   const startSpeakingTask = () => {
-    if (started || state.answers[question.key] || state.submissions.speaking) return;
+    if (started || (!choiceStep && state.answers[question.key]) || state.submissions.speaking) return;
     started = true;
     try {
       chunks = [];
       recordButton.disabled = true;
       recordButton.hidden = true;
       let preparationRemaining = prep;
-      status.textContent = "Preparation time";
+      status.textContent = choiceStep ? "Choose an option — no recording in this step." : "Preparation time";
       time.textContent = formatDuration(preparationRemaining);
       if (limit) {
         setupRecorder().catch((error) => {
@@ -1566,7 +1691,7 @@ async function bindSpeakingRecorder(card, question) {
       await setupRecorder();
       recordButton.hidden = true;
       if (preparationComplete) beginRecording();
-      else status.textContent = "Preparation time";
+      else status.textContent = choiceStep ? "Choose an option — no recording in this step." : "Preparation time";
     } catch (error) {
       const label = preparationComplete ? "Start Recording" : "Enable Microphone";
       showMicFallback(`Microphone unavailable: ${error.message}. Click ${label} to retry.`, label);
