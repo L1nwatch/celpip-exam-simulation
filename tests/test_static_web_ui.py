@@ -166,7 +166,7 @@ class StaticWebUiTests(unittest.TestCase):
     def test_writing_uses_start_screen_before_timer(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function renderWritingIntro", app_js)
-        self.assertIn('if (state.section === "reading" && !state.submissions[state.section] && !state.timer.running) toggleTimer();', app_js)
+        self.assertIn('["reading", "speaking"].includes(state.section)', app_js)
         self.assertIn('if (section === "writing") return params.get("intro") !== "0";', app_js)
         self.assertIn('else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");', app_js)
         self.assertIn('"Begin Writing"', app_js)
@@ -203,6 +203,13 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("function speakingAssessmentHtml", app_js)
         self.assertIn("result.speaking_assessment", app_js)
         self.assertIn("Speaking submitted. AI grading may take up to a minute.", app_js)
+
+    def test_speaking_section_timer_starts_and_resumes(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('["reading", "speaking"].includes(state.section)', app_js)
+        self.assertIn("&& !state.sectionIntro", app_js)
+        self.assertIn("if (!state.submissions.speaking && !state.timer.running) toggleTimer();", app_js)
+        self.assertIn('state.timings[state.section] = {\n    elapsed_seconds: state.timer.elapsed,', app_js)
 
     def test_speaking_uses_custom_recording_player(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

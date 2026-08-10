@@ -231,7 +231,10 @@ async function loadTest() {
   renderSections();
   resetSectionTimer();
   await render();
-  if (state.section === "reading" && !state.submissions[state.section] && !state.timer.running) toggleTimer();
+  if (["reading", "speaking"].includes(state.section)
+    && !state.sectionIntro
+    && !state.submissions[state.section]
+    && !state.timer.running) toggleTimer();
 }
 
 async function fetchDatabaseDraft(testId) {
@@ -917,6 +920,7 @@ function renderSpeakingIntro(groups) {
     state.sectionIntro = false;
     state.index = 0;
     await render();
+    if (!state.submissions.speaking && !state.timer.running) toggleTimer();
   });
   bindPracticeAgainButtons($("answerArea"));
 }
