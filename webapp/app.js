@@ -1196,7 +1196,13 @@ function renderQuestionCard(q, strictListening = false) {
     <div class="speaking-recorder">
       <div class="recorder-actions">
         <button class="record-response" type="button" hidden>Enable Microphone</button>
-        <strong class="recording-time">00:00</strong>
+        <div class="recording-summary">
+          <span class="recording-indicator" role="status" aria-live="polite" hidden>
+            <span class="recording-dot" aria-hidden="true"></span>
+            Recording
+          </span>
+          <strong class="recording-time">00:00</strong>
+        </div>
       </div>
       <audio class="recorded-playback" preload="metadata" hidden></audio>
       <div class="recorded-player" hidden>
@@ -1414,8 +1420,10 @@ async function bindSpeakingRecorder(card, question) {
   const recordButton = card.querySelector(".record-response");
   const playback = card.querySelector(".recorded-playback");
   const playbackUi = bindRecordedPlayback(card, playback);
+  const recorderPanel = card.querySelector(".speaking-recorder");
   const status = card.querySelector(".recorder-status");
   const time = card.querySelector(".recording-time");
+  const recordingIndicator = card.querySelector(".recording-indicator");
   if (state.submissions.speaking) {
     recordButton.hidden = true;
     status.textContent = "Loading recorded response...";
@@ -1438,6 +1446,11 @@ async function bindSpeakingRecorder(card, question) {
   let preparationComplete = false;
   let micSetupPromise = null;
 
+  const showRecordingIndicator = (active) => {
+    recorderPanel?.classList.toggle("is-recording", active);
+    if (recordingIndicator) recordingIndicator.hidden = !active;
+  };
+
   const showMicFallback = (message, label = "Enable Microphone") => {
     recordButton.textContent = label;
     recordButton.hidden = false;
@@ -1458,6 +1471,7 @@ async function bindSpeakingRecorder(card, question) {
         });
         recorder.addEventListener("stop", async () => {
           window.clearInterval(timerId);
+          showRecordingIndicator(false);
           stream?.getTracks().forEach((track) => track.stop());
           const duration = Math.max(1, (Date.now() - startedAt) / 1000);
           const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
@@ -1492,6 +1506,7 @@ async function bindSpeakingRecorder(card, question) {
       recordButton.hidden = true;
       recorder.start(250);
       startedAt = Date.now();
+      showRecordingIndicator(true);
       let recordingRemaining = limit || 60;
       status.textContent = "Recording in progress";
       time.textContent = formatDuration(recordingRemaining);
@@ -1501,6 +1516,7 @@ async function bindSpeakingRecorder(card, question) {
         if (recordingRemaining <= 0 && recorder.state === "recording") recorder.stop();
       }, 1000);
     } catch (error) {
+      showRecordingIndicator(false);
       stream?.getTracks().forEach((track) => track.stop());
       showMicFallback(`Microphone unavailable: ${error.message}. Click Start Recording to retry.`, "Start Recording");
     }

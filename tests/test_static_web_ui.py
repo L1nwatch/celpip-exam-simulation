@@ -213,6 +213,16 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn(".recorded-progress-fill", styles)
         self.assertNotIn('<audio class="recorded-playback" controls', app_js)
 
+    def test_speaking_shows_a_live_indicator_while_recording(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('class="recording-indicator" role="status" aria-live="polite" hidden', app_js)
+        self.assertIn('recorderPanel?.classList.toggle("is-recording", active)', app_js)
+        self.assertIn("showRecordingIndicator(true);", app_js)
+        self.assertIn("showRecordingIndicator(false);", app_js)
+        self.assertIn(".speaking-recorder.is-recording", styles)
+        self.assertIn("@keyframes recording-pulse", styles)
+
     def test_listening_gate_progress_is_read_only_until_review(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")

@@ -990,13 +990,71 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fafc;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.speaking-recorder.is-recording {
+  border-color: #dc2626;
+  background: #fff7f7;
+  box-shadow: 0 0 0 3px rgb(220 38 38 / 10%);
 }
 
 .recorder-actions {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.recording-summary {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.recording-indicator[hidden] {
+  display: none;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 rgb(255 255 255 / 65%);
+  animation: recording-pulse 1.4s ease-out infinite;
+}
+
+@keyframes recording-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgb(255 255 255 / 0%);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgb(255 255 255 / 0%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot {
+    animation: none;
+  }
 }
 
 .record-response {
@@ -1010,7 +1068,6 @@ textarea {
 }
 
 .recording-time {
-  justify-self: end;
   font-variant-numeric: tabular-nums;
 }
 
