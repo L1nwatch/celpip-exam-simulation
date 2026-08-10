@@ -1243,17 +1243,20 @@ function renderQuestionCard(q, strictListening = false) {
   }
 
   const speakingChoiceStep = isSpeakingChoiceStep(q);
+  const speakingChoiceReview = speakingChoiceStep && Boolean(state.submissions.speaking);
   return `<section class="question-card" data-key="${q.key}">
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
     ${taskMedia}
     <div class="card-question-text structured-prompt">${structuredQuestionHtml(q)}</div>
     ${speakingChoiceCarryoverHtml(q)}
-    ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="Choose an option">
-      <strong>No recording in this step</strong>
-      <p>Choose one option now. You will use it in the next speaking step.</p>
+    ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="${speakingChoiceReview ? "Saved option" : "Choose an option"}">
+      <strong>${speakingChoiceReview ? "Choice step — no recording" : "No recording in this step"}</strong>
+      <p>${speakingChoiceReview
+        ? "This step only saved your option for the next speaking task."
+        : "Choose one option now. You will use it in the next speaking step."}</p>
       <div class="speaking-choice-options"><span>Loading options...</span></div>
     </section>` : ""}
-    <div class="speaking-recorder">
+    ${speakingChoiceReview ? "" : `<div class="speaking-recorder">
       <div class="recorder-actions">
         <button class="record-response" type="button" hidden>Enable Microphone</button>
         <div class="recording-summary">
@@ -1273,7 +1276,7 @@ function renderQuestionCard(q, strictListening = false) {
         <span class="recorded-player-time">00:00 / 00:00</span>
       </div>
       <small class="recorder-status">Task starts automatically.</small>
-    </div>
+    </div>`}
     ${state.submissions.speaking ? speakingAssessmentHtml(q) : ""}
     ${state.submissions.speaking ? reviewNoteHtml(q) : ""}
   </section>`;
@@ -1416,7 +1419,7 @@ function speakingChoiceCarryoverHtml(question) {
   </aside>` : "";
 }
 
-async function bindSpeakingChoiceSelector(card, question, status) {
+async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = false) {
   const selector = card.querySelector(".speaking-choice-options");
   if (!selector) return null;
 
@@ -1441,7 +1444,7 @@ async function bindSpeakingChoiceSelector(card, question, status) {
     return emphasized?.textContent?.trim() || `Option ${index + 1}`;
   });
   selector.innerHTML = labels.map((label, index) => `
-    <button class="speaking-choice-button" type="button" data-choice-index="${index}" aria-pressed="false">
+    <button class="speaking-choice-button" type="button" data-choice-index="${index}" aria-pressed="false" ${reviewOnly ? "disabled" : ""}>
       <span>Option ${index + 1}</span>
       <strong>${escapeHtml(label)}</strong>
     </button>`).join("");
@@ -1455,15 +1458,17 @@ async function bindSpeakingChoiceSelector(card, question, status) {
       button.setAttribute("aria-pressed", String(selected));
     });
     state.answers[question.key] = `choice:${safeIndex}:${encodeURIComponent(labels[safeIndex])}`;
-    status.textContent = automatic
-      ? `No option was selected, so ${labels[safeIndex]} was chosen automatically.`
-      : `${labels[safeIndex]} selected. Use the remaining time to prepare.`;
+    if (status) {
+      status.textContent = automatic
+        ? `No option was selected, so ${labels[safeIndex]} was chosen automatically.`
+        : `${labels[safeIndex]} selected. Use the remaining time to prepare.`;
+    }
     persist();
     renderStats();
     return safeIndex;
   };
 
-  buttons.forEach((button, index) => button.addEventListener("click", () => select(index)));
+  if (!reviewOnly) buttons.forEach((button, index) => button.addEventListener("click", () => select(index)));
   const savedIndex = speakingChoiceIndex(state.answers[question.key]);
   if (savedIndex !== null && savedIndex < buttons.length) {
     buttons[savedIndex].classList.add("selected");
@@ -1573,7 +1578,11 @@ function bindQuestionCard(q) {
       });
     });
   });
-  if (q.section === "speaking") bindSpeakingRecorder(card, q);
+  if (q.section === "speaking") {
+    const choiceReview = isSpeakingChoiceStep(q) && Boolean(state.submissions.speaking);
+    if (choiceReview) bindSpeakingChoiceSelector(card, q, null, true);
+    else bindSpeakingRecorder(card, q);
+  }
 }
 
 async function bindSpeakingRecorder(card, question) {
