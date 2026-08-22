@@ -186,7 +186,7 @@ class StaticWebUiTests(unittest.TestCase):
 
     def test_reading_uses_independent_part_timers(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);", app_js)
+        self.assertIn("const READING_PART_TIMERS = READING_PARTS.map((part) => part.minutes * 60);", app_js)
         self.assertIn("function readingPartTimerSeconds", app_js)
         self.assertIn("if (saved.parts?.[index]) return saved.parts[index];", app_js)
         self.assertIn("state.timer.partElapsed", app_js)
@@ -195,6 +195,23 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("if (usesIndependentPartTimer())", app_js)
         self.assertIn("state.index += 1;\n      resetSectionTimer();\n      saveCurrentTiming(true);\n      await render();\n      toggleTimer();", app_js)
         self.assertIn("parts: {\n        ...(saved.parts || {})", app_js)
+
+    def test_reading_groups_are_ordered_by_official_part_type(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        expected_parts = (
+            '{ title: "reading correspondence", questions: 11, minutes: 11 }',
+            '{ title: "reading to apply a diagram", questions: 8, minutes: 9 }',
+            '{ title: "reading for information", questions: 9, minutes: 10 }',
+            '{ title: "reading for viewpoints", questions: 10, minutes: 13 }',
+        )
+        positions = [app_js.index(part) for part in expected_parts]
+        self.assertEqual(sorted(positions), positions)
+        self.assertIn("function readingGroupOrder", app_js)
+        self.assertIn("function orderReadingGroups", app_js)
+        self.assertEqual(2, app_js.count("return orderSectionGroups(groups);"))
+        self.assertIn('if (state.section === "reading") return orderReadingGroups(groups);', app_js)
+        self.assertIn("return orderSpeakingChoiceGroups(groups);", app_js)
+        self.assertIn("left.partIndex - right.partIndex || left.originalIndex - right.originalIndex", app_js)
 
     def test_speaking_has_ai_assessment_flow(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

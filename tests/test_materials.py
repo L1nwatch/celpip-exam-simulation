@@ -20,9 +20,47 @@ OPTIMIZER_SPEC = util.spec_from_file_location(
 )
 optimize_material_media = util.module_from_spec(OPTIMIZER_SPEC)
 OPTIMIZER_SPEC.loader.exec_module(optimize_material_media)
+EXTRACTOR_SPEC = util.spec_from_file_location(
+    "extract_questions",
+    ROOT / "scripts" / "extract_questions.py",
+)
+extract_questions = util.module_from_spec(EXTRACTOR_SPEC)
+EXTRACTOR_SPEC.loader.exec_module(extract_questions)
 
 
 class MaterialFixtureTests(unittest.TestCase):
+    def test_extractor_orders_reading_groups_by_official_part_type(self):
+        part_specs = (
+            ("reading for viewpoints", 10),
+            ("reading for information", 9),
+            ("reading to apply a diagram", 8),
+            ("reading correspondence", 11),
+        )
+        questions = []
+        for title, count in part_specs:
+            source_file = f"pages/reading/{title.replace(' ', '-')}.html"
+            questions.extend(
+                {
+                    "key": f"{title}-{index}",
+                    "section": "reading",
+                    "source_pages": [{"file": source_file, "title": title}],
+                }
+                for index in range(count)
+            )
+
+        groups = extract_questions.build_question_groups(questions)["reading"]
+
+        self.assertEqual(
+            [
+                "reading correspondence",
+                "reading to apply a diagram",
+                "reading for information",
+                "reading for viewpoints",
+            ],
+            [group["title"] for group in groups],
+        )
+        self.assertEqual([11, 8, 9, 10], [len(group["question_keys"]) for group in groups])
+
     def test_demo_material_pack_has_expected_shape(self):
         pack = ROOT / "materials" / "demo" / "local_celpip1_test1"
         material = json.loads((pack / "material.json").read_text(encoding="utf-8"))

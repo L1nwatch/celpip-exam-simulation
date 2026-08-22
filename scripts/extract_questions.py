@@ -20,6 +20,12 @@ PAGES_DIR = ROOT / "pages"
 IFRAMES_DIR = ROOT / "iframes"
 OUT_PATH = ROOT / "questions.json"
 TASK_SECTIONS = {"writing", "speaking"}
+READING_PART_TYPES = (
+    ("reading correspondence", 11),
+    ("reading to apply a diagram", 8),
+    ("reading for information", 9),
+    ("reading for viewpoints", 10),
+)
 
 
 def clean_text(value):
@@ -567,7 +573,25 @@ def build_question_groups(questions):
         question["group_id"] = group["id"]
         group["question_keys"].append(question["key"])
 
+    reading_groups = groups_by_section.get("reading")
+    if reading_groups:
+        reading_groups.sort(key=reading_group_order)
     return groups_by_section
+
+
+def reading_group_order(group):
+    descriptor = clean_text(
+        f"{group.get('title', '')} {group.get('source_file', '')}".replace("-", "_").replace("_", " ")
+    ).casefold()
+    for index, (title, _) in enumerate(READING_PART_TYPES):
+        if title in descriptor:
+            return index
+
+    question_count = len(group.get("question_keys") or [])
+    for index, (_, expected_count) in enumerate(READING_PART_TYPES):
+        if question_count == expected_count:
+            return index
+    return len(READING_PART_TYPES)
 
 
 def inherited_context(iframe_path, iframe_context):

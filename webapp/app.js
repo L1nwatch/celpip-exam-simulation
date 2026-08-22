@@ -23,7 +23,13 @@ const LISTENING_GROUP_TIMERS = {
   "6": 260,
 };
 
-const READING_PART_TIMERS = [11, 9, 10, 13].map((minutes) => minutes * 60);
+const READING_PARTS = [
+  { title: "reading correspondence", questions: 11, minutes: 11 },
+  { title: "reading to apply a diagram", questions: 8, minutes: 9 },
+  { title: "reading for information", questions: 9, minutes: 10 },
+  { title: "reading for viewpoints", questions: 10, minutes: 13 },
+];
+const READING_PART_TIMERS = READING_PARTS.map((part) => part.minutes * 60);
 const WRITING_TASK_TIMERS = [27, 26].map((minutes) => minutes * 60);
 
 const SCORE_TABLES = {
@@ -138,12 +144,12 @@ function sectionGroups() {
     || Object.fromEntries((state.data?.questions || []).map((question) => [question.key, question]));
   const jsonGroups = state.data?.question_groups?.[state.section];
   if (jsonGroups?.length) {
-    const mappedGroups = jsonGroups.map((group) => ({
+    const groups = jsonGroups.map((group) => ({
       ...group,
       page: group.source_file,
       questions: group.question_keys.map((key) => questionsByKey[key]).filter(Boolean),
     }));
-    return orderSpeakingChoiceGroups(mappedGroups);
+    return orderSectionGroups(groups);
   }
 
   const groups = [];
@@ -163,6 +169,11 @@ function sectionGroups() {
     }
     byPage.get(page).questions.push(q);
   }
+  return orderSectionGroups(groups);
+}
+
+function orderSectionGroups(groups) {
+  if (state.section === "reading") return orderReadingGroups(groups);
   return orderSpeakingChoiceGroups(groups);
 }
 
@@ -178,6 +189,27 @@ function orderSpeakingChoiceGroups(groups) {
   const [choiceGroup] = ordered.splice(choiceIndex, 1);
   ordered.splice(persuasionIndex, 0, choiceGroup);
   return ordered;
+}
+
+function readingGroupOrder(group) {
+  const descriptor = `${group?.title || ""} ${group?.source_file || group?.page || ""}`
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const titleIndex = READING_PARTS.findIndex((part) => descriptor.includes(part.title));
+  if (titleIndex >= 0) return titleIndex;
+
+  const questionCount = group?.questions?.length || group?.question_keys?.length || 0;
+  const countIndex = READING_PARTS.findIndex((part) => part.questions === questionCount);
+  return countIndex >= 0 ? countIndex : READING_PARTS.length;
+}
+
+function orderReadingGroups(groups) {
+  return groups
+    .map((group, originalIndex) => ({ group, originalIndex, partIndex: readingGroupOrder(group) }))
+    .sort((left, right) => left.partIndex - right.partIndex || left.originalIndex - right.originalIndex)
+    .map(({ group }) => group);
 }
 
 function currentGroup() {
