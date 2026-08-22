@@ -26,6 +26,16 @@ READING_PART_TYPES = (
     ("reading for information", 9),
     ("reading for viewpoints", 10),
 )
+LISTENING_PART_TYPES = (
+    "problem solving section 1",
+    "problem solving section 2",
+    "problem solving section 3",
+    "daily life",
+    "listening for information",
+    "news item",
+    "discussion",
+    "viewpoint",
+)
 
 
 def clean_text(value):
@@ -573,16 +583,47 @@ def build_question_groups(questions):
         question["group_id"] = group["id"]
         group["question_keys"].append(question["key"])
 
-    reading_groups = groups_by_section.get("reading")
-    if reading_groups:
-        reading_groups.sort(key=reading_group_order)
+    group_sorters = {
+        "listening": listening_group_order,
+        "reading": reading_group_order,
+        "writing": writing_group_order,
+    }
+    for section, order_group in group_sorters.items():
+        section_groups = groups_by_section.get(section)
+        if section_groups:
+            section_groups.sort(key=order_group)
+
+    speaking_groups = groups_by_section.get("speaking")
+    if speaking_groups:
+        questions_by_key = {question["key"]: question for question in questions}
+        speaking_groups.sort(key=lambda group: speaking_group_order(group, questions_by_key))
     return groups_by_section
 
 
-def reading_group_order(group):
-    descriptor = clean_text(
+def group_descriptor(group):
+    return clean_text(
         f"{group.get('title', '')} {group.get('source_file', '')}".replace("-", "_").replace("_", " ")
     ).casefold()
+
+
+def listening_group_order(group):
+    descriptor = group_descriptor(group)
+    if "problem solving" in descriptor:
+        section = re.search(r"section\s*([123])", descriptor)
+        if section:
+            return int(section.group(1)) - 1
+        letter = re.search(r"(?:part\s*1|problem solving)\s*([abc])\b", descriptor)
+        if letter:
+            return ord(letter.group(1)) - ord("a")
+        return 0
+    for index, title in enumerate(LISTENING_PART_TYPES):
+        if title in descriptor:
+            return index
+    return len(LISTENING_PART_TYPES)
+
+
+def reading_group_order(group):
+    descriptor = group_descriptor(group)
     for index, (title, _) in enumerate(READING_PART_TYPES):
         if title in descriptor:
             return index
@@ -592,6 +633,29 @@ def reading_group_order(group):
         if question_count == expected_count:
             return index
     return len(READING_PART_TYPES)
+
+
+def writing_group_order(group):
+    descriptor = group_descriptor(group)
+    if "email" in descriptor or re.search(r"task\s*1\b", descriptor):
+        return 0
+    if "survey" in descriptor or re.search(r"task\s*2\b", descriptor):
+        return 1
+    return 2
+
+
+def speaking_group_order(group, questions_by_key):
+    questions = [questions_by_key[key] for key in group.get("question_keys", []) if key in questions_by_key]
+    task_number = next((int(question["number"]) for question in questions if question.get("number")), 0)
+    if not task_number:
+        return 0
+    if task_number == 5:
+        choice_step = any(
+            "you do not need to speak for this part" in question.get("question_text", "").casefold()
+            for question in questions
+        )
+        return 50 if choice_step else 51
+    return task_number * 10
 
 
 def inherited_context(iframe_path, iframe_context):

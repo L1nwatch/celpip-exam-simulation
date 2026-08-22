@@ -209,9 +209,34 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("function readingGroupOrder", app_js)
         self.assertIn("function orderReadingGroups", app_js)
         self.assertEqual(2, app_js.count("return orderSectionGroups(groups);"))
+        self.assertIn('if (state.section === "listening") return orderListeningGroups(groups);', app_js)
         self.assertIn('if (state.section === "reading") return orderReadingGroups(groups);', app_js)
+        self.assertIn('if (state.section === "writing") return orderWritingGroups(groups);', app_js)
         self.assertIn("return orderSpeakingChoiceGroups(groups);", app_js)
         self.assertIn("left.partIndex - right.partIndex || left.originalIndex - right.originalIndex", app_js)
+
+    def test_other_sections_are_ordered_by_official_part_type(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        for function_name in (
+            "listeningGroupOrder",
+            "orderListeningGroups",
+            "writingGroupOrder",
+            "orderWritingGroups",
+            "speakingGroupOrder",
+        ):
+            self.assertIn(f"function {function_name}", app_js)
+        self.assertIn("return stableOrderGroups(groups, speakingGroupOrder);", app_js)
+        self.assertIn("const taskIndex = group ? writingGroupOrder(group) : index;", app_js)
+        self.assertIn("const partIndex = group ? listeningGroupOrder(group) : index;", app_js)
+
+    def test_missing_listening_passage_is_not_timed_as_a_normal_part(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function isListeningPassageMedia", app_js)
+        self.assertIn("if (!partMedia.some(isListeningPassageMedia))", app_js)
+        self.assertIn("function renderMissingListeningPassage", app_js)
+        self.assertIn("This material pack is missing the main listening audio for this part.", app_js)
+        self.assertIn("stopTimer();\n  stopListeningQuestionTimer();", app_js)
+        self.assertIn('id="missingListeningReturn"', app_js)
 
     def test_speaking_has_ai_assessment_flow(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
@@ -263,9 +288,8 @@ class StaticWebUiTests(unittest.TestCase):
     def test_speaking_choice_step_is_ordered_before_persuasion(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function orderSpeakingChoiceGroups", app_js)
-        self.assertIn("const choiceIndex = groups.findIndex", app_js)
-        self.assertIn("question.number === choiceQuestion.number", app_js)
-        self.assertIn("ordered.splice(persuasionIndex, 0, choiceGroup)", app_js)
+        self.assertIn("return stableOrderGroups(groups, speakingGroupOrder);", app_js)
+        self.assertIn("return group.questions.some(isSpeakingChoiceStep) ? 50 : 51;", app_js)
 
     def test_speaking_missing_recording_metadata_uses_a_safe_fallback(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

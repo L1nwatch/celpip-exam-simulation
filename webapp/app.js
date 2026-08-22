@@ -173,30 +173,77 @@ function sectionGroups() {
 }
 
 function orderSectionGroups(groups) {
+  if (state.section === "listening") return orderListeningGroups(groups);
   if (state.section === "reading") return orderReadingGroups(groups);
+  if (state.section === "writing") return orderWritingGroups(groups);
   return orderSpeakingChoiceGroups(groups);
 }
 
 function orderSpeakingChoiceGroups(groups) {
   if (state.section !== "speaking") return groups;
-  const choiceIndex = groups.findIndex((group) => group.questions.some(isSpeakingChoiceStep));
-  if (choiceIndex < 0) return groups;
-  const choiceQuestion = groups[choiceIndex].questions.find(isSpeakingChoiceStep);
-  const persuasionIndex = groups.findIndex((group, index) => index !== choiceIndex
-    && group.questions.some((question) => question.number === choiceQuestion.number));
-  if (persuasionIndex < 0 || choiceIndex < persuasionIndex) return groups;
-  const ordered = [...groups];
-  const [choiceGroup] = ordered.splice(choiceIndex, 1);
-  ordered.splice(persuasionIndex, 0, choiceGroup);
-  return ordered;
+  return stableOrderGroups(groups, speakingGroupOrder);
 }
 
-function readingGroupOrder(group) {
-  const descriptor = `${group?.title || ""} ${group?.source_file || group?.page || ""}`
+function groupDescriptor(group) {
+  return `${group?.title || ""} ${group?.source_file || group?.page || ""}`
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function stableOrderGroups(groups, orderForGroup) {
+  return groups
+    .map((group, originalIndex) => ({ group, originalIndex, partIndex: orderForGroup(group) }))
+    .sort((left, right) => left.partIndex - right.partIndex || left.originalIndex - right.originalIndex)
+    .map(({ group }) => group);
+}
+
+function listeningGroupOrder(group) {
+  const descriptor = groupDescriptor(group);
+  if (descriptor.includes("problem solving")) {
+    const section = descriptor.match(/section\s*([123])/);
+    if (section) return Number(section[1]) - 1;
+    const letter = descriptor.match(/(?:part\s*1|problem solving)\s*([abc])\b/);
+    if (letter) return letter[1].charCodeAt(0) - "a".charCodeAt(0);
+    return 0;
+  }
+  if (descriptor.includes("daily life")) return 3;
+  if (descriptor.includes("listening for information")) return 4;
+  if (descriptor.includes("news item")) return 5;
+  if (descriptor.includes("discussion")) return 6;
+  if (descriptor.includes("viewpoint")) return 7;
+  return LISTENING_PART_LABELS.length;
+}
+
+function orderListeningGroups(groups) {
+  return stableOrderGroups(groups, listeningGroupOrder);
+}
+
+function writingGroupOrder(group) {
+  const descriptor = groupDescriptor(group);
+  if (descriptor.includes("email") || /task\s*1\b/.test(descriptor)) return 0;
+  if (descriptor.includes("survey") || /task\s*2\b/.test(descriptor)) return 1;
+  const taskNumber = Number(group?.questions?.[0]?.number);
+  return taskNumber === 1 || taskNumber === 2 ? taskNumber - 1 : WRITING_TASK_TIMERS.length;
+}
+
+function orderWritingGroups(groups) {
+  return stableOrderGroups(groups, writingGroupOrder);
+}
+
+function speakingGroupOrder(group) {
+  const numberedQuestion = group?.questions?.find((question) => Number(question.number) > 0);
+  const taskNumber = Number(numberedQuestion?.number) || 0;
+  if (!taskNumber) return 0;
+  if (taskNumber === 5) {
+    return group.questions.some(isSpeakingChoiceStep) ? 50 : 51;
+  }
+  return taskNumber * 10;
+}
+
+function readingGroupOrder(group) {
+  const descriptor = groupDescriptor(group);
   const titleIndex = READING_PARTS.findIndex((part) => descriptor.includes(part.title));
   if (titleIndex >= 0) return titleIndex;
 
@@ -206,10 +253,7 @@ function readingGroupOrder(group) {
 }
 
 function orderReadingGroups(groups) {
-  return groups
-    .map((group, originalIndex) => ({ group, originalIndex, partIndex: readingGroupOrder(group) }))
-    .sort((left, right) => left.partIndex - right.partIndex || left.originalIndex - right.originalIndex)
-    .map(({ group }) => group);
+  return stableOrderGroups(groups, readingGroupOrder);
 }
 
 function currentGroup() {
@@ -734,7 +778,9 @@ function displayPartLabel(index = state.index) {
 }
 
 function listeningPartLabel(index = state.index) {
-  return LISTENING_PART_LABELS[index] || String(index + 1);
+  const group = sectionGroups()[index];
+  const partIndex = group ? listeningGroupOrder(group) : index;
+  return LISTENING_PART_LABELS[partIndex] || LISTENING_PART_LABELS[index] || String(index + 1);
 }
 
 function listeningGroupTimerSeconds(index = state.index) {
@@ -1051,6 +1097,10 @@ function renderQuestionSet(group, partMedia = []) {
 
   const strictListening = state.section === "listening" && !state.submissions[state.section];
   if (strictListening) {
+    if (!partMedia.some(isListeningPassageMedia)) {
+      renderMissingListeningPassage(group);
+      return;
+    }
     const groupSeconds = listeningGroupTimerSeconds(state.index);
     if (groupSeconds) {
       renderListeningQuestionGroup(group, groupSeconds);
@@ -1066,6 +1116,25 @@ function renderQuestionSet(group, partMedia = []) {
   $("answerArea").innerHTML = group.questions.map((question) => renderQuestionCard(question)).join("");
   group.questions.forEach(bindQuestionCard);
   $("feedback").hidden = true;
+}
+
+function isListeningPassageMedia(media) {
+  return ["audio", "video", "source"].includes(media?.type)
+    || /\.(m4a|mp3|wav|ogg|mp4|webm)$/i.test(media?.path || "");
+}
+
+function renderMissingListeningPassage(group) {
+  stopTimer();
+  stopListeningQuestionTimer();
+  $("mediaArea").className = "media-area";
+  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Listening passage unavailable</strong></div>`;
+  $("answerArea").innerHTML = `<section class="question-card data-quality-warning">
+    <h2>${escapeHtml(displayGroupTitle(group))}</h2>
+    <p>This material pack is missing the main listening audio for this part. The questions are disabled so an incomplete part is not timed or scored as a normal CELPIP simulation.</p>
+    <button id="missingListeningReturn" type="button">Return to Overview</button>
+  </section>`;
+  $("feedback").hidden = true;
+  $("missingListeningReturn").addEventListener("click", showOverview);
 }
 
 function renderListeningQuestion(group) {
@@ -2173,7 +2242,9 @@ function readingPartTimerSeconds(index = state.index) {
 }
 
 function writingTaskTimerSeconds(index = state.index) {
-  return WRITING_TASK_TIMERS[index] || WRITING_TASK_TIMERS[WRITING_TASK_TIMERS.length - 1];
+  const group = sectionGroups()[index];
+  const taskIndex = group ? writingGroupOrder(group) : index;
+  return WRITING_TASK_TIMERS[taskIndex] || WRITING_TASK_TIMERS[index] || WRITING_TASK_TIMERS[WRITING_TASK_TIMERS.length - 1];
 }
 
 function usesIndependentPartTimer(section = state.section) {

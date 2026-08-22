@@ -29,6 +29,59 @@ EXTRACTOR_SPEC.loader.exec_module(extract_questions)
 
 
 class MaterialFixtureTests(unittest.TestCase):
+    def test_extractor_orders_all_sections_by_official_part_type(self):
+        part_specs = (
+            ("listening", "listening for viewpoints", 6, None, "Prompt"),
+            ("listening", "listening to problem solving section 1", 3, None, "Prompt"),
+            ("writing", "responding to survey questions", 1, 2, "Prompt"),
+            ("writing", "writing an email", 1, 1, "Prompt"),
+            ("speaking", "Task 7: Expressing Opinions", 1, 7, "Prompt"),
+            ("speaking", "Speaking Practice", 1, None, "Prompt"),
+            ("speaking", "Task 5: Comparing and Persuading 2", 1, 5, "Prompt"),
+            (
+                "speaking",
+                "Task 5: Comparing and Persuading",
+                1,
+                5,
+                "You do not need to speak for this part",
+            ),
+            ("speaking", "Task 1: Giving Advice", 1, 1, "Prompt"),
+        )
+        questions = []
+        for section, title, count, number, question_text in part_specs:
+            source_file = f"pages/{section}/{title.replace(' ', '-')}.html"
+            questions.extend(
+                {
+                    "key": f"{section}-{title}-{index}",
+                    "section": section,
+                    "number": number,
+                    "question_text": question_text,
+                    "source_pages": [{"file": source_file, "title": title}],
+                }
+                for index in range(count)
+            )
+
+        groups = extract_questions.build_question_groups(questions)
+
+        self.assertEqual(
+            ["listening to problem solving section 1", "listening for viewpoints"],
+            [group["title"] for group in groups["listening"]],
+        )
+        self.assertEqual(
+            ["writing an email", "responding to survey questions"],
+            [group["title"] for group in groups["writing"]],
+        )
+        self.assertEqual(
+            [
+                "Speaking Practice",
+                "Task 1: Giving Advice",
+                "Task 5: Comparing and Persuading",
+                "Task 5: Comparing and Persuading 2",
+                "Task 7: Expressing Opinions",
+            ],
+            [group["title"] for group in groups["speaking"]],
+        )
+
     def test_extractor_orders_reading_groups_by_official_part_type(self):
         part_specs = (
             ("reading for viewpoints", 10),
