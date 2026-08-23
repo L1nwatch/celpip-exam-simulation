@@ -248,6 +248,7 @@ class ServerPersistenceTests(unittest.TestCase):
 
         self.assertEqual(media.resolve(), path)
         handler.send_response.assert_called_once_with(HTTPStatus.PARTIAL_CONTENT)
+        handler.send_header.assert_any_call("Content-Type", "audio/mp4")
         handler.send_header.assert_any_call("Accept-Ranges", "bytes")
         handler.send_header.assert_any_call("Content-Range", "bytes 2-5/10")
         handler.send_header.assert_any_call("Content-Length", "4")

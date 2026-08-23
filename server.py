@@ -45,6 +45,7 @@ OPENAI_TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-min
 WRITING_NOTE = "AI practice estimate using CELPIP Writing criteria; not an official CELPIP score."
 SPEAKING_NOTE = "AI practice estimate using CELPIP Speaking criteria; not an official CELPIP score."
 MEDIA_EXTENSIONS = {".aac", ".m4a", ".m4v", ".mov", ".mp3", ".mp4", ".ogg", ".wav", ".webm"}
+MEDIA_CONTENT_TYPES = {".m4a": "audio/mp4"}
 WRITING_CRITERIA = """CELPIP Writing practice rubric:
 1. Coherence/Meaning: clarity, organization, idea flow, precision, and depth.
 2. Vocabulary: range, accurate word choice, idiomatic combinations, and precision.
@@ -1029,7 +1030,7 @@ class Handler(SimpleHTTPRequestHandler):
         return max(0, size - suffix_length), size - 1
 
     def send_media_file(self, path, *, head_only=False):
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        content_type = MEDIA_CONTENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         size = path.stat().st_size
         try:
             byte_range = self.requested_byte_range(size)
