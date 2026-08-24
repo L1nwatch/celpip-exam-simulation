@@ -83,6 +83,8 @@ class StaticWebUiTests(unittest.TestCase):
             "historyBtn",
             "sectionTabs",
             "questionNav",
+            "practiceSidebar",
+            "sidebarToggleBtn",
             "submitSectionBtn",
             "sourceContent",
             "answerArea",
@@ -94,6 +96,19 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertEqual({"overviewView", "historyView", "practiceView"}, parser.mains)
         self.assertIn("Sections", parser.aria_labels)
         self.assertIn("Question list", parser.aria_labels)
+
+    def test_practice_navigation_is_collapsed_by_default_and_toggleable(self):
+        index_html = (ROOT / "webapp" / "index.html").read_text(encoding="utf-8")
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="practiceView" class="shell sidebar-collapsed"', index_html)
+        self.assertIn('aria-controls="practiceSidebar" aria-expanded="false"', index_html)
+        self.assertIn('$("sidebarToggleBtn").addEventListener("click", toggleSidebar);', app_js)
+        self.assertIn("setSidebarCollapsed(true);\n  setView(\"practice\");", app_js)
+        self.assertIn("function setSidebarCollapsed(collapsed)", app_js)
+        self.assertIn('.shell.sidebar-collapsed {\n  grid-template-columns: 0 minmax(0, 1fr);', styles)
+        self.assertIn(".shell.sidebar-collapsed .sidebar", styles)
+        self.assertIn(".shell.sidebar-collapsed {\n    grid-template-columns: 1fr;", styles)
 
     def test_all_dollar_id_lookups_have_a_declared_or_rendered_id(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
@@ -379,6 +394,18 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('${submitted ? "review-card" : ""}', app_js)
         self.assertNotIn('review-note-input" disabled', app_js)
         self.assertIn(".review-card .option", styles)
+
+    def test_wrong_review_answers_are_hidden_until_revealed(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("revealedAnswers: new Set()", app_js)
+        self.assertIn("state.revealedAnswers.clear();", app_js)
+        self.assertIn("const showCorrect = checked === true || answerRevealed;", app_js)
+        self.assertIn('class="reveal-answer small"', app_js)
+        self.assertIn("Show correct answer", app_js)
+        self.assertIn("state.revealedAnswers.add(q.key);", app_js)
+        self.assertIn("Incorrect. Correct answer:", app_js)
+        self.assertIn(".review-feedback", styles)
 
     def test_completed_listening_review_is_restored_from_attempt_history(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

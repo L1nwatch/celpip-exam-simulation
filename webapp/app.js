@@ -67,6 +67,7 @@ const state = {
   submissions: {},
   timings: {},
   notes: {},
+  revealedAnswers: new Set(),
   listeningUnlocked: new Set(),
   listeningQuestionIndex: new Map(),
   listeningQuestionTimer: null,
@@ -284,6 +285,7 @@ async function init() {
   $("prevBtn").addEventListener("click", () => moveQuestion(-1));
   $("nextBtn").addEventListener("click", handleNext);
   $("submitSectionBtn").addEventListener("click", submitSection);
+  $("sidebarToggleBtn").addEventListener("click", toggleSidebar);
   $("overviewBtn").addEventListener("click", showOverview);
   $("historyBtn").addEventListener("click", showHistory);
   $("timerBtn").addEventListener("click", toggleTimer);
@@ -306,6 +308,8 @@ async function init() {
 }
 
 async function loadTest() {
+  state.revealedAnswers.clear();
+  setSidebarCollapsed(true);
   setView("practice");
   const response = await fetch(sourceUrl("questions.json"));
   state.data = await response.json();
@@ -374,6 +378,20 @@ function setView(view) {
   $("practiceView").hidden = view !== "practice";
   $("overviewBtn").hidden = view === "overview";
   $("historyBtn").hidden = view === "history";
+}
+
+function setSidebarCollapsed(collapsed) {
+  const shell = $("practiceView");
+  const button = $("sidebarToggleBtn");
+  shell.classList.toggle("sidebar-collapsed", collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  const action = collapsed ? "Show" : "Hide";
+  button.setAttribute("aria-label", `${action} test navigation`);
+  button.title = `${action} test navigation`;
+}
+
+function toggleSidebar() {
+  setSidebarCollapsed(!$("practiceView").classList.contains("sidebar-collapsed"));
 }
 
 function stopPracticePlayback() {
@@ -1301,11 +1319,15 @@ function renderQuestionCard(q, strictListening = false) {
   const taskMedia = q.question_html ? "" : media;
   if (q.question_type === "multiple_choice_single") {
     const submitted = Boolean(state.submissions[state.section]);
+    const checked = state.checked[q.key];
+    const answerRevealed = checked === false && state.revealedAnswers.has(q.key);
     const options = q.options.map((option) => {
       const selected = saved === option.id || saved === option.value;
-      const checked = state.checked[q.key];
       const graded = submitted && checked !== undefined;
-      const correctness = graded && option.is_correct ? "correct" : graded && selected && !option.is_correct ? "wrong" : "";
+      const showCorrect = checked === true || answerRevealed;
+      const correctness = graded && option.is_correct && showCorrect
+        ? "correct"
+        : graded && selected && !option.is_correct ? "wrong" : "";
       const text = option.text ? `<span>${escapeHtml(option.text)}</span>` : "";
       const media = option.media?.length ? `<div class="option-media">${option.media.map(mediaNode).join("")}</div>` : "";
       return `<label class="option ${selected ? "selected" : ""} ${correctness}">
@@ -1666,6 +1688,13 @@ function bindQuestionCard(q) {
       }, 700);
     });
   }
+  const revealAnswer = card.querySelector(".reveal-answer");
+  if (revealAnswer) {
+    revealAnswer.addEventListener("click", () => {
+      state.revealedAnswers.add(q.key);
+      render();
+    });
+  }
   card.querySelectorAll(".response-sample-tab").forEach((button) => {
     button.addEventListener("click", () => {
       const selectedIndex = button.dataset.sampleIndex;
@@ -1974,8 +2003,14 @@ function questionFeedback(q) {
   const checked = state.checked[q.key];
   if (checked === undefined || checked === null) return "";
   if (checked) return `<div class="inline-feedback good">Correct.</div>`;
+  if (!state.revealedAnswers.has(q.key)) {
+    return `<div class="inline-feedback bad review-feedback" aria-live="polite">
+      <span>Incorrect. Work through the choices, then reveal the correct answer when you are ready.</span>
+      <button class="reveal-answer small" type="button">Show correct answer</button>
+    </div>`;
+  }
   const correct = q.options.filter((option) => option.is_correct).map((option) => option.text || option.label).join("; ");
-  return `<div class="inline-feedback bad">Correct answer: ${escapeHtml(correct)}</div>`;
+  return `<div class="inline-feedback bad" aria-live="polite">Incorrect. Correct answer: ${escapeHtml(correct)}</div>`;
 }
 
 async function renderSource(group, showHidden = false) {

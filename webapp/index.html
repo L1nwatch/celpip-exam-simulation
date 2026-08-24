@@ -73,8 +73,8 @@
     <p id="historyNotice" class="overview-notice"></p>
   </main>
 
-  <main id="practiceView" class="shell" hidden>
-    <aside class="sidebar">
+  <main id="practiceView" class="shell sidebar-collapsed" hidden>
+    <aside id="practiceSidebar" class="sidebar">
       <nav id="sectionTabs" class="section-tabs" aria-label="Sections"></nav>
       <div class="summary">
         <div>
@@ -93,9 +93,14 @@
 
     <section class="workspace">
       <div class="workspace-head">
-        <div>
-          <p id="partLabel" class="eyebrow">Loading</p>
-          <h1 id="questionTitle">CELPIP Practice</h1>
+        <div class="workspace-heading">
+          <button id="sidebarToggleBtn" class="sidebar-toggle icon-btn" type="button"
+            aria-label="Show test navigation" aria-controls="practiceSidebar" aria-expanded="false"
+            title="Show test navigation">☰</button>
+          <div>
+            <p id="partLabel" class="eyebrow">Loading</p>
+            <h1 id="questionTitle">CELPIP Practice</h1>
+          </div>
         </div>
         <div class="timer" aria-live="polite">
           <span id="timerLabel">Practice</span>
