@@ -208,7 +208,7 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('state.section === "writing" ? "Writing Task" : "Reading Part"', app_js)
         self.assertIn("function handleTimerExpired", app_js)
         self.assertIn("if (usesIndependentPartTimer())", app_js)
-        self.assertIn("state.index += 1;\n      resetSectionTimer();\n      saveCurrentTiming(true);\n      await render();\n      toggleTimer();", app_js)
+        self.assertIn("state.index += 1;\n      resetSectionTimer();\n      saveCurrentTiming(true);\n      await renderPracticeStep();\n      toggleTimer();", app_js)
         self.assertIn("parts: {\n        ...(saved.parts || {})", app_js)
 
     def test_reading_groups_are_ordered_by_official_part_type(self):
@@ -229,6 +229,18 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('if (state.section === "writing") return orderWritingGroups(groups);', app_js)
         self.assertIn("return orderSpeakingChoiceGroups(groups);", app_js)
         self.assertIn("left.partIndex - right.partIndex || left.originalIndex - right.originalIndex", app_js)
+
+    def test_practice_step_navigation_resets_panel_and_narrow_screen_scroll(self):
+        app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "webapp" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("async function renderPracticeStep()", app_js)
+        self.assertIn("await renderPracticeStep();", app_js)
+        self.assertIn("if (source) source.scrollTop = 0;", app_js)
+        self.assertIn("if (questions) questions.scrollTop = 0;", app_js)
+        self.assertIn('window.matchMedia("(max-width: 1040px)").matches', app_js)
+        self.assertIn('(firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });', app_js)
+        self.assertIn("window.requestAnimationFrame(reset);", app_js)
+        self.assertIn("overflow-anchor: none;", styles)
 
     def test_other_sections_are_ordered_by_official_part_type(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")

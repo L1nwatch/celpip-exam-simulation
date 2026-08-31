@@ -645,6 +645,7 @@ h1 {
 .question-panel {
   padding: 20px;
   overflow-y: auto;
+  overflow-anchor: none;
   scrollbar-gutter: stable;
 }
 

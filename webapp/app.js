@@ -773,7 +773,7 @@ function renderQuestionNav(groups) {
   $("questionNav").querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
       state.index = Number(button.dataset.index);
-      await render();
+      await renderPracticeStep();
     });
   });
 }
@@ -1064,7 +1064,7 @@ function renderSpeakingIntro(groups) {
   startButton.addEventListener("click", async () => {
     state.sectionIntro = false;
     state.index = 0;
-    await render();
+    await renderPracticeStep();
     if (!state.submissions.speaking && !state.timer.running) toggleTimer();
   });
   bindPracticeAgainButtons($("answerArea"));
@@ -1097,7 +1097,7 @@ function renderWritingIntro(groups) {
     state.sectionIntro = false;
     state.index = resumeTaskIndex;
     resetSectionTimer();
-    await render();
+    await renderPracticeStep();
     if (!state.submissions.writing && !state.timer.running) toggleTimer();
   });
   bindPracticeAgainButtons($("answerArea"));
@@ -1227,7 +1227,7 @@ async function startListeningQuestionAudio() {
   }
 }
 
-function advanceListeningQuestion(group) {
+async function advanceListeningQuestion(group) {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   state.listeningQuestionTimer = null;
   const key = listeningUnlockKey(group);
@@ -1235,13 +1235,13 @@ function advanceListeningQuestion(group) {
   if (nextIndex < group.questions.length) {
     state.listeningQuestionIndex.set(key, nextIndex);
   } else {
-    advanceListeningPart();
+    await advanceListeningPart();
     return;
   }
-  render();
+  await renderPracticeStep();
 }
 
-function advanceListeningPart() {
+async function advanceListeningPart() {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   state.listeningQuestionTimer = null;
   if (state.index < sectionGroups().length - 1) {
@@ -1250,7 +1250,7 @@ function advanceListeningPart() {
     submitSection();
     return;
   }
-  render();
+  await renderPracticeStep();
 }
 
 function listeningUnlockKey(group) {
@@ -1307,7 +1307,7 @@ function renderListeningGate(group, media) {
     const key = listeningUnlockKey(group);
     state.listeningUnlocked.add(key);
     state.listeningQuestionIndex.set(key, 0);
-    render();
+    renderPracticeStep();
   });
 }
 
@@ -1989,11 +1989,11 @@ async function uploadSpeakingRecording(question, blob, duration, status, playbac
   }
 }
 
-function advanceSpeakingTask() {
+async function advanceSpeakingTask() {
   if (state.section !== "speaking" || state.submissions.speaking) return;
   if (state.index < sectionGroups().length - 1) {
     state.index += 1;
-    render();
+    await renderPracticeStep();
   } else {
     submitSection();
   }
@@ -2084,7 +2084,7 @@ async function submitSection() {
       if (state.section === "writing") renderFeedback(null, "Writing submitted. AI grading may take up to a minute.");
       if (state.section === "speaking") renderFeedback(null, "Speaking saved. Select Grade with AI when you are ready for scores.");
       await saveSubmissionToDatabase();
-      await render();
+      await renderPracticeStep();
       return;
     }
 
@@ -2118,7 +2118,7 @@ async function submitSection() {
     };
     persist();
     await saveSubmissionToDatabase();
-    await render();
+    await renderPracticeStep();
   } finally {
     state.submittingSection = false;
   }
@@ -2242,15 +2242,28 @@ async function moveQuestion(delta) {
     resetSectionTimer();
     saveCurrentTiming(true);
   }
+  await renderPracticeStep();
+}
+
+async function renderPracticeStep() {
   await render();
   resetPracticeScroll();
 }
 
 function resetPracticeScroll() {
-  const source = $("sourceContent");
-  const questions = document.querySelector(".question-panel");
-  if (source) source.scrollTop = 0;
-  if (questions) questions.scrollTop = 0;
+  const reset = () => {
+    const source = $("sourceContent");
+    const questions = document.querySelector(".question-panel");
+    if (source) source.scrollTop = 0;
+    if (questions) questions.scrollTop = 0;
+
+    if (window.matchMedia("(max-width: 1040px)").matches) {
+      const firstQuestion = $("answerArea")?.querySelector(".question-card");
+      (firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });
+    }
+  };
+  reset();
+  window.requestAnimationFrame(reset);
 }
 
 function resetSectionTimer() {
@@ -2325,7 +2338,7 @@ async function handleTimerExpired() {
       state.index += 1;
       resetSectionTimer();
       saveCurrentTiming(true);
-      await render();
+      await renderPracticeStep();
       toggleTimer();
       return;
     }
