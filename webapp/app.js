@@ -72,6 +72,7 @@ const state = {
   listeningQuestionIndex: new Map(),
   listeningQuestionTimer: null,
   sourceCache: new Map(),
+  sourceContextKey: null,
   dbStatus: {},
   draftSyncTimers: new Map(),
   sectionIntro: false,
@@ -664,10 +665,16 @@ async function render() {
   if (showSpeakingIntro) renderSpeakingIntro(groups);
   else if (showWritingIntro) renderWritingIntro(groups);
   else renderQuestionSet(group, group.media || []);
+  const sourcePanel = document.querySelector(".source-panel");
+  const sourceContextKey = `${state.testId}:${state.section}:${submitted ? "review" : "attempt"}`;
+  if (state.sourceContextKey !== sourceContextKey) {
+    state.sourceContextKey = sourceContextKey;
+    setSourceCollapsed(state.section === "listening" && submitted);
+  }
   const hideSource = (state.section === "listening" && !submitted)
     || state.section === "writing"
     || state.section === "speaking";
-  document.querySelector(".source-panel").hidden = hideSource;
+  sourcePanel.hidden = hideSource;
   document.querySelector(".practice-grid").classList.toggle("question-only", hideSource);
   $("sourcePanelTitle").textContent = state.section === "listening" ? "Transcript" : "Source";
   if (!hideSource) await renderSource(group, state.section === "listening" && submitted);
@@ -2414,10 +2421,17 @@ function formatDuration(totalSeconds) {
     : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function setSourceCollapsed(collapsed) {
+  const panel = document.querySelector(".source-panel");
+  const button = $("toggleSourceBtn");
+  panel.classList.toggle("collapsed", collapsed);
+  button.textContent = collapsed ? "Show" : "Hide";
+  button.setAttribute("aria-expanded", String(!collapsed));
+}
+
 function toggleSource() {
   const panel = document.querySelector(".source-panel");
-  panel.classList.toggle("collapsed");
-  $("toggleSourceBtn").textContent = panel.classList.contains("collapsed") ? "Show" : "Hide";
+  setSourceCollapsed(!panel.classList.contains("collapsed"));
 }
 
 function countWords(text) {
