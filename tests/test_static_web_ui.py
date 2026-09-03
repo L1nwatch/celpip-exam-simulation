@@ -429,11 +429,11 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('const level = estimateLevel("listening", restoredCorrect, questions.length)', app_js)
         self.assertIn("restored_from_history: true", app_js)
 
-    def test_listening_review_transcript_is_collapsed_by_default(self):
+    def test_each_listening_review_transcript_is_collapsed_by_default(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         index_html = (ROOT / "webapp" / "index.html").read_text(encoding="utf-8")
         self.assertIn('sourceContextKey: null', app_js)
-        self.assertIn('const sourceContextKey = `${state.testId}:${state.section}:${submitted ? "review" : "attempt"}`;', app_js)
+        self.assertIn('const sourceContextKey = `${state.testId}:${state.section}:${state.index}:${submitted ? "review" : "attempt"}`;', app_js)
         self.assertIn('setSourceCollapsed(state.section === "listening" && submitted);', app_js)
         self.assertIn("function setSourceCollapsed(collapsed)", app_js)
         self.assertIn('button.setAttribute("aria-expanded", String(!collapsed));', app_js)

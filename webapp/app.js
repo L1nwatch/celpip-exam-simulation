@@ -666,7 +666,7 @@ async function render() {
   else if (showWritingIntro) renderWritingIntro(groups);
   else renderQuestionSet(group, group.media || []);
   const sourcePanel = document.querySelector(".source-panel");
-  const sourceContextKey = `${state.testId}:${state.section}:${submitted ? "review" : "attempt"}`;
+  const sourceContextKey = `${state.testId}:${state.section}:${state.index}:${submitted ? "review" : "attempt"}`;
   if (state.sourceContextKey !== sourceContextKey) {
     state.sourceContextKey = sourceContextKey;
     setSourceCollapsed(state.section === "listening" && submitted);
