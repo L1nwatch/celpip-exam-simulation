@@ -39,6 +39,58 @@ class ServerPersistenceTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         server.init_db()
 
+    def test_reviews_are_idempotent_persistent_and_scoped_to_each_page(self):
+        first = {"test_id": "local_celpip1_test1", "section": "listening", "page": "pages/part1.html", "reviewed": True}
+        others = [
+            {**first, "page": "pages/part2.html"},
+            {**first, "section": "reading"},
+            {**first, "test_id": "local_celpip1_test2"},
+        ]
+        for review in [first, first, *others]:
+            server.save_review(review)
+        server.init_db()
+        self.assertEqual(4, len(server.saved_reviews()))
+        server.save_draft({"test_id": first["test_id"], "answers": {}, "checked": {}, "submissions": {}})
+        self.assertEqual(4, len(server.saved_reviews()))
+        server.save_review({**first, "reviewed": False})
+        server.save_review({**first, "reviewed": False})
+        self.assertEqual(
+            {(row["test_id"], row["section"], row["page"]) for row in others},
+            {(row["test_id"], row["section"], row["page"]) for row in server.saved_reviews()},
+        )
+
+    def test_reviews_validate_payloads(self):
+        valid = {"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": True}
+        for payload in [None, [], {}, *[
+            {**valid, key: value} for key, value in [
+                ("test_id", "invalid"), ("section", []), ("section", "invalid"),
+                ("page", " "), ("page", "x" * 1025), ("page", 1),
+                ("reviewed", "false"), ("reviewed", 1),
+            ]
+        ]]:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                server.save_review(payload)
+        self.assertEqual([], server.saved_reviews())
+
+    def test_review_http_endpoints(self):
+        handler = server.Handler.__new__(server.Handler)
+        handler.path = "/api/reviews"
+        handler.send_json = mock.Mock()
+        payload = {"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": True}
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = BytesIO(body)
+        handler.do_POST()
+        handler.send_json.assert_called_with(HTTPStatus.CREATED, {"ok": True, **payload})
+        handler.do_GET()
+        status, result = handler.send_json.call_args.args
+        self.assertEqual(HTTPStatus.OK, status)
+        self.assertEqual("part1.html", result["reviews"][0]["page"])
+        handler.rfile = BytesIO(b"null")
+        handler.headers = {"Content-Length": "4"}
+        handler.do_POST()
+        self.assertEqual(HTTPStatus.BAD_REQUEST, handler.send_json.call_args.args[0])
+
     def test_save_and_load_draft_roundtrip(self):
         result = server.save_draft(
             {

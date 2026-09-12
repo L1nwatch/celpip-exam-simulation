@@ -187,6 +187,49 @@ button:disabled {
   font-weight: 500;
 }
 
+.status-button,
+.part-dot {
+  position: relative;
+}
+
+.status-button.has-reviews {
+  padding-right: 28px;
+}
+
+.review-star {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  color: #956000;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.part-dot .review-star {
+  top: 2px;
+  right: 3px;
+  font-size: 11px;
+}
+
+.part-dot.active .review-star {
+  color: #ffe09a;
+}
+
+.review-button[aria-pressed="true"] {
+  color: #795000;
+  background: #fff4d4;
+  border-color: #d5b56a;
+}
+
+.status-button .review-count {
+  color: #795000;
+}
+
+.review-notice {
+  margin: 0 0 16px;
+  color: var(--warn);
+}
+
 .status-button.completed {
   border-color: #9ed0b6;
   background: #e8f5ee;

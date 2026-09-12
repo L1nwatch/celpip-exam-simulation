@@ -67,6 +67,9 @@ const state = {
   submissions: {},
   timings: {},
   notes: {},
+  reviews: {},
+  reviewsError: "",
+  reviewSave: null,
   revealedAnswers: new Set(),
   listeningUnlocked: new Set(),
   listeningQuestionIndex: new Map(),
@@ -106,6 +109,91 @@ function timingStorageKey(testId = state.testId) {
 
 function notesStorageKey(testId = state.testId) {
   return `${storageKey(testId)}:notes`;
+}
+
+const REVIEWS_STORAGE_KEY = "celpip-practice:reviewed-pages";
+
+function reviewKey(testId, section, page) {
+  return JSON.stringify([testId, section, page]);
+}
+
+function reviewPage(group) {
+  return group?.source_file || group?.page || group?.id;
+}
+
+function isGroupReviewed(group) {
+  return Boolean(state.reviews[reviewKey(state.testId, state.section, reviewPage(group))]);
+}
+
+async function loadReviews() {
+  await state.reviewSave;
+  state.reviewsError = "";
+  try {
+    if (SERVER_API_ENABLED) {
+      const response = await fetch("/api/reviews", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const { reviews } = await response.json();
+      state.reviews = Object.fromEntries(reviews.map((review) => [
+        reviewKey(review.test_id, review.section, review.page), review,
+      ]));
+    } else {
+      state.reviews = JSON.parse(localStorage.getItem(REVIEWS_STORAGE_KEY) || "{}");
+    }
+  } catch (error) {
+    state.reviewsError = `Review marks could not be loaded. Reload to retry. ${error.message}`;
+  }
+}
+
+function renderReviewControl() {
+  const button = $("reviewBtn");
+  const group = currentGroup();
+  button.hidden = $("practiceView").hidden || !group || $("questionNav").hidden;
+  button.disabled = Boolean(state.reviewSave || state.reviewsError);
+  const reviewed = isGroupReviewed(group);
+  button.textContent = state.reviewSave ? "Saving…" : reviewed ? "★ Reviewed" : "☆ Mark reviewed";
+  button.setAttribute("aria-pressed", String(reviewed));
+  button.title = reviewed ? "Remove reviewed mark for this part" : "Mark this part as reviewed";
+  $("reviewNotice").textContent = state.reviewsError;
+  $("reviewNotice").hidden = !state.reviewsError;
+}
+
+async function toggleReviewed() {
+  const group = currentGroup();
+  if (!group || state.reviewSave || state.reviewsError) return;
+  const review = { test_id: state.testId, section: state.section, page: reviewPage(group) };
+  const key = reviewKey(review.test_id, review.section, review.page);
+  const reviewed = !state.reviews[key];
+  let saveError = "";
+  state.reviewSave = (async () => {
+    // Let the pending promise be assigned before any synchronous preview save finishes.
+    await Promise.resolve();
+    try {
+      if (SERVER_API_ENABLED) {
+        const response = await fetch("/api/reviews", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...review, reviewed }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      }
+      const reviews = { ...state.reviews };
+      if (reviewed) reviews[key] = review;
+      else delete reviews[key];
+      if (!SERVER_API_ENABLED) localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(reviews));
+      state.reviews = reviews;
+    } catch (error) {
+      saveError = `Could not save review mark. Please try again. ${error.message}`;
+    }
+  })();
+  renderReviewControl();
+  await state.reviewSave;
+  state.reviewSave = null;
+  renderReviewControl();
+  renderQuestionNav(sectionGroups());
+  if (saveError) {
+    $("reviewNotice").textContent = saveError;
+    $("reviewNotice").hidden = false;
+  }
 }
 
 function assetUrl(path) {
@@ -288,6 +376,7 @@ async function init() {
   $("submitSectionBtn").addEventListener("click", submitSection);
   $("sidebarToggleBtn").addEventListener("click", toggleSidebar);
   $("overviewBtn").addEventListener("click", showOverview);
+  $("reviewBtn").addEventListener("click", toggleReviewed);
   $("historyBtn").addEventListener("click", showHistory);
   $("timerBtn").addEventListener("click", toggleTimer);
   $("toggleSourceBtn").addEventListener("click", toggleSource);
@@ -321,6 +410,7 @@ async function loadTest() {
   state.submissions = mergeSubmissions(databaseDraft?.submissions, localDraft.submissions);
   state.timings = { ...(databaseDraft?.timings || {}), ...localDraft.timings };
   state.notes = { ...(databaseDraft?.notes || {}), ...localDraft.notes };
+  await loadReviews();
   await restoreListeningReviewFromHistory();
   persist({ sync: false });
   scheduleDraftSync(state.testId, 0);
@@ -379,6 +469,7 @@ function setView(view) {
   $("practiceView").hidden = view !== "practice";
   $("overviewBtn").hidden = view === "overview";
   $("historyBtn").hidden = view === "history";
+  $("reviewBtn").hidden = true;
 }
 
 function setSidebarCollapsed(collapsed) {
@@ -465,6 +556,7 @@ async function showOverview() {
   document.title = "CELPIP Practice Overview";
   $("overviewBody").innerHTML = `<tr><td colspan="5">Loading practice history...</td></tr>`;
   $("overviewNotice").textContent = "";
+  await loadReviews();
 
   let attempts = [];
   let savedDrafts = [];
@@ -483,6 +575,8 @@ async function showOverview() {
       $("overviewNotice").textContent = `SQLite history unavailable; showing browser progress only. ${error.message}`;
     }
   }
+
+  if (state.reviewsError) $("overviewNotice").textContent += ` ${state.reviewsError}`;
 
   const latest = new Map();
   for (const attempt of attempts) {
@@ -527,8 +621,13 @@ async function showOverview() {
         detail = `${answered} answered`;
       }
 
-      return `<td><button class="status-button ${status}" data-test="${test.id}" data-section="${section.id}" type="button">
+      const reviewedCount = Object.values(state.reviews)
+        .filter((review) => review.test_id === test.id && review.section === section.id).length;
+      const reviewLabel = `${reviewedCount} part${reviewedCount === 1 ? "" : "s"} reviewed`;
+      return `<td><button class="status-button ${status} ${reviewedCount ? "has-reviews" : ""}" data-test="${test.id}" data-section="${section.id}" type="button">
+        ${reviewedCount ? `<span class="review-star" aria-hidden="true">★</span>` : ""}
         <span>${label}</span><small>${escapeHtml(detail)}</small>
+        ${reviewedCount ? `<small class="review-count">${reviewLabel}</small>` : ""}
       </button></td>`;
     }).join("");
     return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}</tr>`;
@@ -658,6 +757,7 @@ async function render() {
   $("questionText").hidden = showSectionIntro || !instruction;
   renderQuestionNav(groups);
   $("questionNav").hidden = showSectionIntro;
+  renderReviewControl();
   renderStats();
   renderSectionResult();
   updateTimer();
@@ -773,7 +873,9 @@ function renderQuestionNav(groups) {
     const locked = ["listening", "reading", "writing", "speaking"].includes(state.section)
       && !state.submissions[state.section]
       && i !== state.index;
-    return `<button class="q-dot part-dot ${i === state.index ? "active" : ""} ${status}" data-index="${i}" title="${escapeHtml(displayGroupTitle(group, i))}" ${locked ? "disabled" : ""}>
+    const reviewed = isGroupReviewed(group);
+    return `<button class="q-dot part-dot ${i === state.index ? "active" : ""} ${status}" data-index="${i}" title="${escapeHtml(displayGroupTitle(group, i))}${reviewed ? " · Reviewed" : ""}" ${locked ? "disabled" : ""}>
+      ${reviewed ? '<span class="review-star" role="img" aria-label="Reviewed">★</span>' : ""}
       <span>${groupNavLabel(groups, group, i)}</span><small>${answered}/${group.questions.length}</small>
     </button>`;
   }).join("");

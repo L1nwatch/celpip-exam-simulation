@@ -101,6 +101,17 @@ def init_db():
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS reviewed_pages (
+                test_id TEXT NOT NULL,
+                section TEXT NOT NULL,
+                page TEXT NOT NULL,
+                reviewed_at TEXT NOT NULL,
+                PRIMARY KEY (test_id, section, page)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS attempts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 test_id TEXT NOT NULL,
@@ -830,6 +841,44 @@ def save_submission_for_api(payload):
     return result
 
 
+def save_review(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Review must be an object")
+    test_id = payload.get("test_id")
+    section = payload.get("section")
+    page = payload.get("page")
+    reviewed = payload.get("reviewed")
+    if not isinstance(test_id, str) or not re.fullmatch(r"local_celpip(?:[1-9]|1[0-3])_test[12]", test_id):
+        raise ValueError("Invalid test_id")
+    if section not in ("listening", "reading", "writing", "speaking"):
+        raise ValueError("Invalid section")
+    if not isinstance(page, str) or not page.strip() or len(page) > 1024:
+        raise ValueError("page must be a non-empty string of at most 1024 characters")
+    if not isinstance(reviewed, bool):
+        raise ValueError("reviewed must be a boolean")
+    with sqlite3.connect(DB_PATH) as conn:
+        if reviewed:
+            conn.execute(
+                "INSERT INTO reviewed_pages (test_id, section, page, reviewed_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(test_id, section, page) DO NOTHING",
+                (test_id, section, page, utc_now()),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM reviewed_pages WHERE test_id = ? AND section = ? AND page = ?",
+                (test_id, section, page),
+            )
+    return {"test_id": test_id, "section": section, "page": page, "reviewed": reviewed}
+
+
+def saved_reviews():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(row) for row in conn.execute(
+            "SELECT test_id, section, page, reviewed_at FROM reviewed_pages ORDER BY test_id, section, page"
+        )]
+
+
 def save_draft(payload):
     required = ["test_id", "answers", "checked", "submissions"]
     missing = [key for key in required if key not in payload]
@@ -1095,6 +1144,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/drafts":
             self.send_json(HTTPStatus.OK, {"drafts": saved_drafts()})
             return
+        if parsed.path == "/api/reviews":
+            self.send_json(HTTPStatus.OK, {"reviews": saved_reviews()})
+            return
         if parsed.path == "/api/recordings":
             from urllib.parse import parse_qs
 
@@ -1174,14 +1226,19 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
             return
 
-        if parsed.path not in {"/api/submissions", "/api/drafts"}:
+        if parsed.path not in {"/api/submissions", "/api/drafts", "/api/reviews"}:
             self.send_error(HTTPStatus.NOT_FOUND, "Unknown API endpoint")
             return
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            result = save_submission_for_api(payload) if parsed.path == "/api/submissions" else save_draft(payload)
+            save = {
+                "/api/submissions": save_submission_for_api,
+                "/api/drafts": save_draft,
+                "/api/reviews": save_review,
+            }[parsed.path]
+            result = save(payload)
         except ValueError as exc:
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return

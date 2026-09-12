@@ -80,6 +80,8 @@ class StaticWebUiTests(unittest.TestCase):
             "historyView",
             "practiceView",
             "overviewBtn",
+            "reviewBtn",
+            "reviewNotice",
             "historyBtn",
             "sectionTabs",
             "questionNav",
@@ -124,6 +126,7 @@ class StaticWebUiTests(unittest.TestCase):
         for endpoint in (
             "/api/submissions",
             "/api/drafts",
+            "/api/reviews",
             "/api/recordings",
             "/api/writing-assessments",
             "/api/speaking-assessments",
@@ -131,6 +134,16 @@ class StaticWebUiTests(unittest.TestCase):
             with self.subTest(endpoint=endpoint):
                 self.assertIn(endpoint, app_js)
                 self.assertIn(endpoint, server_py)
+
+    def test_review_behavior(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        result = subprocess.run(
+            [node, str(ROOT / "tests" / "reviews.test.cjs")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_public_preview_does_not_reference_private_materials(self):
         preview_js = (self.preview_root / "webapp" / "app.js").read_text(encoding="utf-8")
