@@ -99,17 +99,27 @@ def init_db():
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
+        has_section_reviews = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_sections'"
+        ).fetchone()
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS reviewed_pages (
+            CREATE TABLE IF NOT EXISTS reviewed_sections (
                 test_id TEXT NOT NULL,
                 section TEXT NOT NULL,
-                page TEXT NOT NULL,
                 reviewed_at TEXT NOT NULL,
-                PRIMARY KEY (test_id, section, page)
+                PRIMARY KEY (test_id, section)
             )
             """
         )
+        if not has_section_reviews and conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_pages'"
+        ).fetchone():
+            # Migrate existing marks once; restarting must not restore removed marks.
+            conn.execute(
+                "INSERT INTO reviewed_sections (test_id, section, reviewed_at) "
+                "SELECT test_id, section, MAX(reviewed_at) FROM reviewed_pages GROUP BY test_id, section"
+            )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS attempts (
@@ -846,36 +856,33 @@ def save_review(payload):
         raise ValueError("Review must be an object")
     test_id = payload.get("test_id")
     section = payload.get("section")
-    page = payload.get("page")
     reviewed = payload.get("reviewed")
     if not isinstance(test_id, str) or not re.fullmatch(r"local_celpip(?:[1-9]|1[0-3])_test[12]", test_id):
         raise ValueError("Invalid test_id")
     if section not in ("listening", "reading", "writing", "speaking"):
         raise ValueError("Invalid section")
-    if not isinstance(page, str) or not page.strip() or len(page) > 1024:
-        raise ValueError("page must be a non-empty string of at most 1024 characters")
     if not isinstance(reviewed, bool):
         raise ValueError("reviewed must be a boolean")
     with sqlite3.connect(DB_PATH) as conn:
         if reviewed:
             conn.execute(
-                "INSERT INTO reviewed_pages (test_id, section, page, reviewed_at) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(test_id, section, page) DO NOTHING",
-                (test_id, section, page, utc_now()),
+                "INSERT INTO reviewed_sections (test_id, section, reviewed_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(test_id, section) DO NOTHING",
+                (test_id, section, utc_now()),
             )
         else:
             conn.execute(
-                "DELETE FROM reviewed_pages WHERE test_id = ? AND section = ? AND page = ?",
-                (test_id, section, page),
+                "DELETE FROM reviewed_sections WHERE test_id = ? AND section = ?",
+                (test_id, section),
             )
-    return {"test_id": test_id, "section": section, "page": page, "reviewed": reviewed}
+    return {"test_id": test_id, "section": section, "reviewed": reviewed}
 
 
 def saved_reviews():
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(row) for row in conn.execute(
-            "SELECT test_id, section, page, reviewed_at FROM reviewed_pages ORDER BY test_id, section, page"
+            "SELECT test_id, section, reviewed_at FROM reviewed_sections ORDER BY test_id, section"
         )]
 
 

@@ -187,8 +187,7 @@ button:disabled {
   font-weight: 500;
 }
 
-.status-button,
-.part-dot {
+.status-button {
   position: relative;
 }
 
@@ -205,23 +204,13 @@ button:disabled {
   line-height: 1;
 }
 
-.part-dot .review-star {
-  top: 2px;
-  right: 3px;
-  font-size: 11px;
-}
-
-.part-dot.active .review-star {
-  color: #ffe09a;
-}
-
 .review-button[aria-pressed="true"] {
   color: #795000;
   background: #fff4d4;
   border-color: #d5b56a;
 }
 
-.status-button .review-count {
+.status-button .review-label {
   color: #795000;
 }
 

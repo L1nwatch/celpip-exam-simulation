@@ -4,7 +4,7 @@ A local CELPIP-style practice app for Listening, Reading, Writing, and Speaking.
 
 No official CELPIP content is included. Public demo content is fake; real or licensed practice material must stay local.
 
-Use **☆ Mark reviewed** in the top-right corner of a practice part to mark it as reviewed. Click **★ Reviewed** to undo. The overview shows a star and the number of reviewed parts for each test section, and test navigation marks the individual parts. Review marks are saved to SQLite across browsers independently of answers and scores; the public demo saves them in the current browser only.
+Use **☆ Mark Listening reviewed** in the top-right corner of any Listening part to mark the entire Listening section of that test as reviewed. Reading, Writing, and Speaking each have their own section mark. Click the button again to undo. The overview shows a star and **Reviewed** for that test section. Review marks are saved to SQLite across browsers independently of answers and scores; the public demo saves them in the current browser only.
 
 ## Screenshots
 
