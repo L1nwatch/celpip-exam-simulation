@@ -111,14 +111,41 @@ function notesStorageKey(testId = state.testId) {
   return `${storageKey(testId)}:notes`;
 }
 
-const REVIEWS_STORAGE_KEY = "celpip-practice:reviewed-sections";
+const REVIEWS_STORAGE_KEY = "celpip-practice:reviewed-parts-v2";
 
-function reviewKey(testId, section) {
-  return JSON.stringify([testId, section]);
+async function migrateLocalReviews() {
+  const sections = localStorage.getItem("celpip-practice:reviewed-sections");
+  if (sections == null) return JSON.parse(localStorage.getItem("celpip-practice:reviewed-pages") || "{}");
+  const reviews = {};
+  const materials = new Map();
+  for (const { test_id: testId, section } of Object.values(JSON.parse(sections))) {
+    if (!materials.has(testId)) {
+      const response = await fetch(materialUrl(testId, "questions.json"));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      materials.set(testId, await response.json());
+    }
+    const data = materials.get(testId);
+    const groups = data.question_groups?.[section];
+    const pages = groups?.length ? groups.map((group) => group.source_file) : (data.questions || [])
+      .filter((question) => question.section === section)
+      .map((question) => question.source_pages?.[0]?.file || question.source_file || question.key);
+    for (const page of new Set(pages.filter(Boolean))) {
+      reviews[reviewKey(testId, section, page)] = { test_id: testId, section, page };
+    }
+  }
+  return reviews;
 }
 
-function isSectionReviewed(testId = state.testId, section = state.section) {
-  return Boolean(state.reviews[reviewKey(testId, section)]);
+function reviewKey(testId, section, page) {
+  return JSON.stringify([testId, section, page]);
+}
+
+function reviewPage(group) {
+  return group?.source_file || group?.page || group?.id;
+}
+
+function isGroupReviewed(group) {
+  return Boolean(state.reviews[reviewKey(state.testId, state.section, reviewPage(group))]);
 }
 
 async function loadReviews() {
@@ -130,18 +157,12 @@ async function loadReviews() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const { reviews } = await response.json();
       state.reviews = Object.fromEntries(reviews.map((review) => [
-        reviewKey(review.test_id, review.section), review,
+        reviewKey(review.test_id, review.section, review.page), review,
       ]));
     } else {
-      let saved = localStorage.getItem(REVIEWS_STORAGE_KEY);
-      if (saved == null) {
-        const oldReviews = JSON.parse(localStorage.getItem("celpip-practice:reviewed-pages") || "{}");
-        saved = JSON.stringify(Object.fromEntries(Object.values(oldReviews).map(({ test_id, section }) => [
-          reviewKey(test_id, section), { test_id, section },
-        ])));
-        localStorage.setItem(REVIEWS_STORAGE_KEY, saved);
-      }
-      state.reviews = JSON.parse(saved);
+      const saved = localStorage.getItem(REVIEWS_STORAGE_KEY);
+      state.reviews = saved == null ? await migrateLocalReviews() : JSON.parse(saved);
+      if (saved == null) localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(state.reviews));
     }
   } catch (error) {
     state.reviewsError = `Review marks could not be loaded. Reload to retry. ${error.message}`;
@@ -151,13 +172,12 @@ async function loadReviews() {
 function renderReviewControl() {
   const button = $("reviewBtn");
   const group = currentGroup();
-  button.hidden = $("practiceView").hidden || !group;
+  button.hidden = $("practiceView").hidden || !group || $("questionNav").hidden;
   button.disabled = Boolean(state.reviewSave || state.reviewsError);
-  const reviewed = isSectionReviewed();
-  const sectionLabel = SECTIONS.find((section) => section.id === state.section).label;
-  button.textContent = state.reviewSave ? "Saving…" : reviewed ? `★ ${sectionLabel} reviewed` : `☆ Mark ${sectionLabel} reviewed`;
+  const reviewed = isGroupReviewed(group);
+  button.textContent = state.reviewSave ? "Saving…" : reviewed ? "★ Reviewed" : "☆ Mark reviewed";
   button.setAttribute("aria-pressed", String(reviewed));
-  button.title = reviewed ? `Remove reviewed mark for this entire ${sectionLabel} section` : `Mark this entire ${sectionLabel} section as reviewed`;
+  button.title = reviewed ? "Remove reviewed mark for this part" : "Mark this part as reviewed";
   $("reviewNotice").textContent = state.reviewsError;
   $("reviewNotice").hidden = !state.reviewsError;
 }
@@ -165,8 +185,8 @@ function renderReviewControl() {
 async function toggleReviewed() {
   const group = currentGroup();
   if (!group || state.reviewSave || state.reviewsError) return;
-  const review = { test_id: state.testId, section: state.section };
-  const key = reviewKey(review.test_id, review.section);
+  const review = { test_id: state.testId, section: state.section, page: reviewPage(group) };
+  const key = reviewKey(review.test_id, review.section, review.page);
   const reviewed = !state.reviews[key];
   let saveError = "";
   state.reviewSave = (async () => {
@@ -194,6 +214,7 @@ async function toggleReviewed() {
   await state.reviewSave;
   state.reviewSave = null;
   renderReviewControl();
+  renderQuestionNav(sectionGroups());
   if (saveError) {
     $("reviewNotice").textContent = saveError;
     $("reviewNotice").hidden = false;
@@ -625,11 +646,13 @@ async function showOverview() {
         detail = `${answered} answered`;
       }
 
-      const reviewed = isSectionReviewed(test.id, section.id);
-      return `<td><button class="status-button ${status} ${reviewed ? "has-reviews" : ""}" data-test="${test.id}" data-section="${section.id}" type="button">
-        ${reviewed ? `<span class="review-star" aria-hidden="true">★</span>` : ""}
+      const reviewedCount = Object.values(state.reviews)
+        .filter((review) => review.test_id === test.id && review.section === section.id).length;
+      const reviewLabel = `${reviewedCount} part${reviewedCount === 1 ? "" : "s"} reviewed`;
+      return `<td><button class="status-button ${status} ${reviewedCount ? "has-reviews" : ""}" data-test="${test.id}" data-section="${section.id}" type="button">
+        ${reviewedCount ? `<span class="review-star" aria-hidden="true">★</span>` : ""}
         <span>${label}</span><small>${escapeHtml(detail)}</small>
-        ${reviewed ? `<small class="review-label">Reviewed</small>` : ""}
+        ${reviewedCount ? `<small class="review-count">${reviewLabel}</small>` : ""}
       </button></td>`;
     }).join("");
     return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}</tr>`;
@@ -875,7 +898,9 @@ function renderQuestionNav(groups) {
     const locked = ["listening", "reading", "writing", "speaking"].includes(state.section)
       && !state.submissions[state.section]
       && i !== state.index;
-    return `<button class="q-dot part-dot ${i === state.index ? "active" : ""} ${status}" data-index="${i}" title="${escapeHtml(displayGroupTitle(group, i))}" ${locked ? "disabled" : ""}>
+    const reviewed = isGroupReviewed(group);
+    return `<button class="q-dot part-dot ${i === state.index ? "active" : ""} ${status}" data-index="${i}" title="${escapeHtml(displayGroupTitle(group, i))}${reviewed ? " · Reviewed" : ""}" ${locked ? "disabled" : ""}>
+      ${reviewed ? '<span class="review-star" role="img" aria-label="Reviewed">★</span>' : ""}
       <span>${groupNavLabel(groups, group, i)}</span><small>${answered}/${group.questions.length}</small>
     </button>`;
   }).join("");

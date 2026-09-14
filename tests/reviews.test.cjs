@@ -26,7 +26,7 @@ function setup(serverEnabled, storage = new Map()) {
         if (options.method === 'POST') {
           const review = JSON.parse(options.body);
           requests.push(review);
-          const key = JSON.stringify([review.test_id, review.section]);
+          const key = JSON.stringify([review.test_id, review.section, review.page]);
           if (review.reviewed) saved.set(key, review);
           else saved.delete(key);
         }
@@ -57,44 +57,47 @@ function setup(serverEnabled, storage = new Map()) {
     run('renderReviewControl()');
     assert.equal(element('reviewBtn').attributes['aria-pressed'], 'false');
     await run('toggleReviewed()');
-    assert.equal(element('reviewBtn').textContent, '★ Listening reviewed');
-    run('renderQuestionNav(sectionGroups())');
-    assert.doesNotMatch(element('questionNav').innerHTML, /Reviewed/);
+    assert.equal(element('reviewBtn').textContent, '★ Reviewed');
+    assert.match(element('questionNav').innerHTML, /aria-label="Reviewed"/);
     run('state.index = 1; renderReviewControl()');
-    assert.equal(element('reviewBtn').attributes['aria-pressed'], 'true');
-    assert.equal(run("isSectionReviewed(state.testId, 'reading')"), false);
-    assert.equal(run("isSectionReviewed('local_celpip1_test2', state.section)"), false);
+    assert.equal(element('reviewBtn').attributes['aria-pressed'], 'false');
+    await run('toggleReviewed()');
     await run('showOverview()');
     assert.equal(element('reviewBtn').hidden, true);
     assert.equal((element('overviewBody').innerHTML.match(/class="review-star"/g) || []).length, 1);
-    assert.match(element('overviewBody').innerHTML, />Reviewed</);
-    assert.doesNotMatch(element('overviewBody').innerHTML, /parts? reviewed/);
+    assert.match(element('overviewBody').innerHTML, /2 parts reviewed/);
     assert.match(element('overviewBody').innerHTML, /Not started/);
     // A fresh client (or fresh page in preview) reads the persisted marks.
     const next = setup(serverEnabled, app.storage);
     if (serverEnabled) for (const [key, value] of app.saved) next.saved.set(key, value);
     await next.run('loadReviews()');
-    assert.equal(next.run('isSectionReviewed()'), true);
-    // Unmark from a different part; every part in this section is now unmarked.
-    next.run('state.index = 1');
+    assert.equal(next.run('isGroupReviewed(currentGroup())'), true);
+    // Unmark only the current part; switching tests must not reuse its marks.
     await next.run('toggleReviewed()');
     await next.run('showOverview()');
-    assert.doesNotMatch(next.element('overviewBody').innerHTML, /review-star/);
-    next.run('state.index = 0');
-    assert.equal(next.run('isSectionReviewed()'), false);
+    assert.match(next.element('overviewBody').innerHTML, /1 part reviewed/);
     next.run("state.testId = 'local_celpip1_test2'");
-    assert.equal(next.run('isSectionReviewed()'), false);
+    assert.equal(next.run('isGroupReviewed(currentGroup())'), false);
   }
 
-  const legacy = setup(false, new Map([['celpip-practice:reviewed-pages', JSON.stringify({
-    first: {test_id: 'local_celpip1_test1', section: 'listening', page: 'part1.html'},
-    second: {test_id: 'local_celpip1_test1', section: 'listening', page: 'part2.html'},
-  })]]));
+  const legacy = setup(false, new Map([
+    ['celpip-practice:reviewed-sections', JSON.stringify({
+      listening: {test_id: 'local_celpip1_test1', section: 'listening'},
+    })],
+    ['celpip-practice:reviewed-pages', JSON.stringify({
+      stale: {test_id: 'local_celpip1_test1', section: 'reading', page: 'stale.html'},
+    })],
+  ]));
+  legacy.context.fetch = async () => ({ok: true, json: async () => ({question_groups: {listening: [
+    {source_file: 'pages/part1.html'}, {source_file: 'pages/part2.html'},
+  ]}})});
   await legacy.run('loadReviews()');
-  assert.equal(legacy.run('Object.keys(state.reviews).length'), 1);
+  assert.equal(legacy.run('Object.keys(state.reviews).length'), 2);
   await legacy.run('toggleReviewed()');
   await legacy.run('loadReviews()');
-  assert.equal(legacy.run('isSectionReviewed()'), false);
+  assert.equal(legacy.run('isGroupReviewed(currentGroup())'), false);
+  legacy.run('state.index = 1');
+  assert.equal(legacy.run('isGroupReviewed(currentGroup())'), true);
 
   const failed = setup(true);
   failed.context.fetch = async () => ({ ok: false, status: 503 });
@@ -117,8 +120,8 @@ function setup(serverEnabled, storage = new Map()) {
   pending.run('state.index = 1');
   finish({ ok: true });
   await saving;
-  assert.equal(pending.element('reviewBtn').attributes['aria-pressed'], 'true');
+  assert.equal(pending.element('reviewBtn').attributes['aria-pressed'], 'false');
   pending.run('state.index = 0');
-  assert.equal(pending.run('isSectionReviewed()'), true);
+  assert.equal(pending.run('isGroupReviewed(currentGroup())'), true);
   console.log('Review persistence, overview, navigation, failure and pending-save checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

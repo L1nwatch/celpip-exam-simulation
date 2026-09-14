@@ -94,32 +94,71 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def review_pages_for_section(data, section):
+    groups = data.get("question_groups", {}).get(section, [])
+    if groups:
+        return {group["source_file"] for group in groups if group.get("source_file")}
+    pages = set()
+    for question in data.get("questions", []):
+        if question.get("section") == section:
+            sources = question.get("source_pages") or [{}]
+            page = sources[0].get("file") or question.get("source_file") or question.get("key")
+            if page:
+                pages.add(page)
+    return pages
+
+
+def migrate_part_reviews(conn, had_parts):
+    has_sections = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_sections'"
+    ).fetchone()
+    if not has_sections:
+        if not had_parts and conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_pages'"
+        ).fetchone():
+            conn.execute("INSERT INTO reviewed_parts SELECT test_id, section, page, reviewed_at FROM reviewed_pages")
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS reviewed_section_migrations ("
+        "test_id TEXT, section TEXT, PRIMARY KEY (test_id, section))"
+    )
+    for test_id, section, reviewed_at in conn.execute(
+        "SELECT test_id, section, reviewed_at FROM reviewed_sections "
+        "WHERE (test_id, section) NOT IN (SELECT test_id, section FROM reviewed_section_migrations)"
+    ).fetchall():
+        path = MATERIALS_DIR / test_id / "questions.json"
+        if not path.is_file():
+            continue  # Retry on startup when the material pack becomes available.
+        pages = review_pages_for_section(json.loads(path.read_text(encoding="utf-8")), section)
+        if not pages:
+            continue
+        conn.executemany(
+            "INSERT OR IGNORE INTO reviewed_parts (test_id, section, page, reviewed_at) VALUES (?, ?, ?, ?)",
+            [(test_id, section, page, reviewed_at) for page in pages],
+        )
+        conn.execute("INSERT INTO reviewed_section_migrations VALUES (?, ?)", (test_id, section))
+
+
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
-        has_section_reviews = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_sections'"
+        had_parts = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_parts'"
         ).fetchone()
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS reviewed_sections (
+            CREATE TABLE IF NOT EXISTS reviewed_parts (
                 test_id TEXT NOT NULL,
                 section TEXT NOT NULL,
+                page TEXT NOT NULL,
                 reviewed_at TEXT NOT NULL,
-                PRIMARY KEY (test_id, section)
+                PRIMARY KEY (test_id, section, page)
             )
             """
         )
-        if not has_section_reviews and conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reviewed_pages'"
-        ).fetchone():
-            # Migrate existing marks once; restarting must not restore removed marks.
-            conn.execute(
-                "INSERT INTO reviewed_sections (test_id, section, reviewed_at) "
-                "SELECT test_id, section, MAX(reviewed_at) FROM reviewed_pages GROUP BY test_id, section"
-            )
+        migrate_part_reviews(conn, had_parts)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS attempts (
@@ -856,33 +895,36 @@ def save_review(payload):
         raise ValueError("Review must be an object")
     test_id = payload.get("test_id")
     section = payload.get("section")
+    page = payload.get("page")
     reviewed = payload.get("reviewed")
     if not isinstance(test_id, str) or not re.fullmatch(r"local_celpip(?:[1-9]|1[0-3])_test[12]", test_id):
         raise ValueError("Invalid test_id")
     if section not in ("listening", "reading", "writing", "speaking"):
         raise ValueError("Invalid section")
+    if not isinstance(page, str) or not page.strip() or len(page) > 1024:
+        raise ValueError("page must be a non-empty string of at most 1024 characters")
     if not isinstance(reviewed, bool):
         raise ValueError("reviewed must be a boolean")
     with sqlite3.connect(DB_PATH) as conn:
         if reviewed:
             conn.execute(
-                "INSERT INTO reviewed_sections (test_id, section, reviewed_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(test_id, section) DO NOTHING",
-                (test_id, section, utc_now()),
+                "INSERT INTO reviewed_parts (test_id, section, page, reviewed_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(test_id, section, page) DO NOTHING",
+                (test_id, section, page, utc_now()),
             )
         else:
             conn.execute(
-                "DELETE FROM reviewed_sections WHERE test_id = ? AND section = ?",
-                (test_id, section),
+                "DELETE FROM reviewed_parts WHERE test_id = ? AND section = ? AND page = ?",
+                (test_id, section, page),
             )
-    return {"test_id": test_id, "section": section, "reviewed": reviewed}
+    return {"test_id": test_id, "section": section, "page": page, "reviewed": reviewed}
 
 
 def saved_reviews():
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(row) for row in conn.execute(
-            "SELECT test_id, section, reviewed_at FROM reviewed_sections ORDER BY test_id, section"
+            "SELECT test_id, section, page, reviewed_at FROM reviewed_parts ORDER BY test_id, section, page"
         )]
 
 

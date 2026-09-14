@@ -39,44 +39,80 @@ class ServerPersistenceTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         server.init_db()
 
-    def test_reviews_are_idempotent_persistent_and_scoped_to_each_section(self):
-        first = {"test_id": "local_celpip1_test1", "section": "listening", "reviewed": True}
+    def test_reviews_are_idempotent_persistent_and_scoped_to_each_page(self):
+        first = {"test_id": "local_celpip1_test1", "section": "listening", "page": "pages/part1.html", "reviewed": True}
         others = [
+            {**first, "page": "pages/part2.html"},
             {**first, "section": "reading"},
             {**first, "test_id": "local_celpip1_test2"},
         ]
         for review in [first, first, *others]:
             server.save_review(review)
         server.init_db()
-        self.assertEqual(3, len(server.saved_reviews()))
+        self.assertEqual(4, len(server.saved_reviews()))
         server.save_draft({"test_id": first["test_id"], "answers": {}, "checked": {}, "submissions": {}})
-        self.assertEqual(3, len(server.saved_reviews()))
+        self.assertEqual(4, len(server.saved_reviews()))
         server.save_review({**first, "reviewed": False})
         server.save_review({**first, "reviewed": False})
         self.assertEqual(
-            {(row["test_id"], row["section"]) for row in others},
-            {(row["test_id"], row["section"]) for row in server.saved_reviews()},
+            {(row["test_id"], row["section"], row["page"]) for row in others},
+            {(row["test_id"], row["section"], row["page"]) for row in server.saved_reviews()},
         )
 
-    def test_legacy_page_marks_migrate_once_to_sections(self):
+    def test_section_marks_migrate_to_parts_once_without_reviving_old_marks(self):
+        materials = self.root / "materials"
+        pack = materials / "local_celpip1_test1"
+        pack.mkdir(parents=True)
+        (pack / "questions.json").write_text(json.dumps({"question_groups": {"listening": [
+            {"source_file": "part1.html"}, {"source_file": "part2.html"},
+        ]}}))
         with server.sqlite3.connect(self.db_path) as conn:
-            conn.execute("DROP TABLE reviewed_sections")
+            conn.execute("CREATE TABLE reviewed_sections (test_id TEXT, section TEXT, reviewed_at TEXT)")
+            conn.execute("INSERT INTO reviewed_sections VALUES ('local_celpip1_test1', 'listening', '2026-09-12')")
             conn.execute("CREATE TABLE reviewed_pages (test_id TEXT, section TEXT, page TEXT, reviewed_at TEXT)")
-            for page in ("part1.html", "part2.html"):
-                conn.execute("INSERT INTO reviewed_pages VALUES (?, ?, ?, ?)",
-                             ("local_celpip1_test1", "listening", page, "2026-09-12"))
+            conn.execute("INSERT INTO reviewed_pages VALUES ('local_celpip1_test1', 'reading', 'old.html', '2026-09-12')")
+        with mock.patch.object(server, "MATERIALS_DIR", materials):
+            server.init_db()
+            self.assertEqual({"part1.html", "part2.html"}, {r["page"] for r in server.saved_reviews()})
+            server.save_review({"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": False})
+            server.init_db()
+            self.assertEqual(["part2.html"], [r["page"] for r in server.saved_reviews()])
+
+    def test_section_migration_retries_when_materials_become_available(self):
+        materials = self.root / "materials"
+        with server.sqlite3.connect(self.db_path) as conn:
+            conn.execute("CREATE TABLE reviewed_sections (test_id TEXT, section TEXT, reviewed_at TEXT)")
+            conn.execute("INSERT INTO reviewed_sections VALUES ('local_celpip1_test1', 'listening', '2026-09-12')")
+        with mock.patch.object(server, "MATERIALS_DIR", materials):
+            server.init_db()
+            self.assertEqual([], server.saved_reviews())
+            pack = materials / "local_celpip1_test1"
+            pack.mkdir(parents=True)
+            (pack / "questions.json").write_text(json.dumps({"questions": [
+                {"section": "listening", "source_pages": [{"file": "part1.html"}]},
+                {"section": "listening", "source_file": "part1.html"},
+                {"section": "reading", "source_file": "reading.html"},
+            ]}))
+            server.init_db()
+            self.assertEqual(["part1.html"], [r["page"] for r in server.saved_reviews()])
+
+    def test_original_part_reviews_survive_direct_upgrade(self):
+        with server.sqlite3.connect(self.db_path) as conn:
+            conn.execute("DROP TABLE reviewed_parts")
+            conn.execute("CREATE TABLE reviewed_pages (test_id TEXT, section TEXT, page TEXT, reviewed_at TEXT)")
+            conn.execute("INSERT INTO reviewed_pages VALUES ('local_celpip1_test1', 'listening', 'part1.html', '2026-09-12')")
         server.init_db()
-        self.assertEqual(1, len(server.saved_reviews()))
-        self.assertNotIn("page", server.saved_reviews()[0])
-        server.save_review({"test_id": "local_celpip1_test1", "section": "listening", "reviewed": False})
+        self.assertEqual(["part1.html"], [r["page"] for r in server.saved_reviews()])
+        server.save_review({"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": False})
         server.init_db()
         self.assertEqual([], server.saved_reviews())
 
     def test_reviews_validate_payloads(self):
-        valid = {"test_id": "local_celpip1_test1", "section": "listening", "reviewed": True}
+        valid = {"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": True}
         for payload in [None, [], {}, *[
             {**valid, key: value} for key, value in [
                 ("test_id", "invalid"), ("section", []), ("section", "invalid"),
+                ("page", " "), ("page", "x" * 1025), ("page", 1),
                 ("reviewed", "false"), ("reviewed", 1),
             ]
         ]]:
@@ -88,7 +124,7 @@ class ServerPersistenceTests(unittest.TestCase):
         handler = server.Handler.__new__(server.Handler)
         handler.path = "/api/reviews"
         handler.send_json = mock.Mock()
-        payload = {"test_id": "local_celpip1_test1", "section": "listening", "reviewed": True}
+        payload = {"test_id": "local_celpip1_test1", "section": "listening", "page": "part1.html", "reviewed": True}
         body = json.dumps(payload).encode()
         handler.headers = {"Content-Length": str(len(body))}
         handler.rfile = BytesIO(body)
@@ -97,8 +133,7 @@ class ServerPersistenceTests(unittest.TestCase):
         handler.do_GET()
         status, result = handler.send_json.call_args.args
         self.assertEqual(HTTPStatus.OK, status)
-        self.assertEqual("listening", result["reviews"][0]["section"])
-        self.assertNotIn("page", result["reviews"][0])
+        self.assertEqual("part1.html", result["reviews"][0]["page"])
         handler.rfile = BytesIO(b"null")
         handler.headers = {"Content-Length": "4"}
         handler.do_POST()
