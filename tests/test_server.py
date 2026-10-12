@@ -428,6 +428,12 @@ class ServerPersistenceTests(unittest.TestCase):
                 {
                     "questions": [
                         {
+                            "key": "speaking_practice",
+                            "section": "speaking",
+                            "number": None,
+                            "question_text": "Talk about a hobby you enjoy.",
+                        },
+                        {
                             "key": "speaking_q1",
                             "section": "speaking",
                             "number": 1,
@@ -440,13 +446,19 @@ class ServerPersistenceTests(unittest.TestCase):
             encoding="utf-8",
         )
         recording = server.save_recording("local_celpip1_test1", "speaking_q1", "audio/webm", 3.5, b"fake-webm")
+        practice_recording = server.save_recording("local_celpip1_test1", "speaking_practice", "audio/webm", 3.5, b"warm-up-webm")
         submission = server.save_submission(
             {
                 "test_id": "local_celpip1_test1",
                 "section": "speaking",
-                "total_questions": 1,
-                "answered_count": 1,
+                "total_questions": 2,
+                "answered_count": 2,
                 "responses": [
+                    {
+                        "question_key": "speaking_practice",
+                        "answer_value": f"recording:{practice_recording['recording_id']}",
+                        "question_number": None,
+                    },
                     {
                         "question_key": "speaking_q1",
                         "answer_value": f"recording:{recording['recording_id']}",
@@ -483,17 +495,40 @@ class ServerPersistenceTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "MATERIALS_DIR", materials_dir),
-            mock.patch.object(server, "transcribe_recording", return_value="I went to Vancouver and enjoyed the mountains."),
+            mock.patch.object(server, "transcribe_recording", return_value="I went to Vancouver and enjoyed the mountains.") as transcribe,
             mock.patch.dict("os.environ", {"OPENAI_API_KEY": "sk-" + "x" * 30}),
-            mock.patch.object(server, "urlopen", return_value=FakeResponse(api_payload)),
+            mock.patch.object(server, "urlopen", return_value=FakeResponse(api_payload)) as request,
         ):
             assessment = server.request_speaking_assessment(submission["attempt_id"])
 
         self.assertEqual(8, assessment["overall_level"])
+        transcribe.assert_called_once()
+        self.assertEqual("speaking_q1", transcribe.call_args.args[0]["question_key"])
+        tasks = json.loads(json.loads(request.call_args.args[0].data)["input"])["tasks"]
+        self.assertEqual(["speaking_q1"], [task["question_key"] for task in tasks])
+        self.assertEqual([1], [task["task_number"] for task in tasks])
         self.assertEqual("gpt-4o-mini-transcribe", assessment["transcription_model"])
         attempts = server.recent_attempts()
         self.assertEqual("8", attempts[0]["estimated_level"])
         self.assertEqual(server.SPEAKING_NOTE, attempts[0]["note"])
+
+    def test_speaking_practice_only_attempt_does_not_call_ai(self):
+        with (
+            mock.patch.object(server, "speaking_attempt", return_value=(
+                {"test_id": "local_celpip1_test1"},
+                [{"question_key": "practice", "question_number": 1}],
+            )),
+            mock.patch.object(server, "speaking_questions", return_value={
+                "practice": {"section": "speaking", "number": None},
+            }),
+            mock.patch.object(server, "transcribe_recording") as transcribe,
+            mock.patch.object(server, "urlopen") as request,
+        ):
+            with self.assertRaisesRegex(ValueError, "no Speaking recordings to assess"):
+                server.request_speaking_assessment(42)
+
+        transcribe.assert_not_called()
+        request.assert_not_called()
 
     def test_speaking_submission_is_saved_without_automatic_ai_assessment(self):
         with (

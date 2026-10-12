@@ -145,6 +145,16 @@ class StaticWebUiTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_speaking_practice_is_not_graded(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        result = subprocess.run(
+            [node, str(ROOT / "tests" / "speaking-practice.test.cjs")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_public_preview_does_not_reference_private_materials(self):
         preview_js = (self.preview_root / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("../output/", preview_js)

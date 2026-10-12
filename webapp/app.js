@@ -954,7 +954,9 @@ function sectionChoiceQuestions() {
 function renderSectionResult() {
   const box = $("sectionResult");
   const result = state.submissions[state.section];
-  if (!result) {
+  const questions = currentGroup()?.questions || [];
+  const speakingPractice = questions.length > 0 && questions.every(isSpeakingPracticeQuestion);
+  if (!result || speakingPractice) {
     box.hidden = true;
     return;
   }
@@ -1503,6 +1505,7 @@ function renderQuestionCard(q, strictListening = false) {
   const speakingChoiceReview = speakingChoiceStep && Boolean(state.submissions.speaking);
   return `<section class="question-card" data-key="${q.key}">
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
+    ${isSpeakingPracticeQuestion(q) ? "<small>Optional warm-up. This practice task is not graded.</small>" : ""}
     ${taskMedia}
     <div class="card-question-text structured-prompt">${structuredQuestionHtml(q)}</div>
     ${speakingChoiceCarryoverHtml(q)}
@@ -1573,6 +1576,7 @@ function writingAssessmentHtml(question) {
 }
 
 function speakingAssessmentHtml(question) {
+  if (isSpeakingPracticeQuestion(question)) return "";
   const assessment = state.submissions.speaking?.speaking_assessment;
   const task = assessment?.task_assessments?.find((item) => item.question_key === question.key);
   if (!task) return "";
@@ -1636,6 +1640,10 @@ function structuredQuestionHtml(question) {
   if (!question.question_html) return escapeHtml(question.question_text || "");
   const sourceFile = question.source_file || question.source_pages?.[0]?.file;
   return sanitizeStructuredHtml(question.question_html, sourceFile, true);
+}
+
+function isSpeakingPracticeQuestion(question) {
+  return question.section === "speaking" && !question.number;
 }
 
 function isSpeakingChoiceStep(question) {

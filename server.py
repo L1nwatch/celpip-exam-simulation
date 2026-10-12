@@ -778,7 +778,7 @@ def request_speaking_assessment(attempt_id):
     tasks = []
     for response in responses:
         question = questions.get(response["question_key"])
-        if not question:
+        if not question or not question.get("number"):
             continue
         recording = recording_from_answer(attempt["test_id"], response["question_key"], response.get("answer_value"))
         if not recording:
@@ -787,7 +787,7 @@ def request_speaking_assessment(attempt_id):
         tasks.append(
             {
                 "question_key": response["question_key"],
-                "task_number": response["question_number"] or question.get("number") or len(tasks) + 1,
+                "task_number": question["number"],
                 "prompt": clean_speaking_prompt(question.get("question_text", "")),
                 "preparation_seconds": question.get("timing", {}).get("preparation_seconds"),
                 "recording_seconds": question.get("timing", {}).get("recording_seconds"),
