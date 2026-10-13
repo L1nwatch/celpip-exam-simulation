@@ -769,6 +769,10 @@ async function render() {
   const group = currentGroup();
   const submitted = Boolean(state.submissions[state.section]);
   const showSpeakingIntro = state.section === "speaking" && state.sectionIntro;
+  if (state.section === "speaking" && !showSpeakingIntro) {
+    const prompts = group.questions.flatMap((question) => [question, previousSpeakingChoiceQuestion(question)]).filter(Boolean);
+    await Promise.all(prompts.map(loadSpeakingChoicePrompt));
+  }
   const showWritingIntro = state.section === "writing" && state.sectionIntro && !submitted;
   const showSectionIntro = showSpeakingIntro || showWritingIntro;
   updatePracticeUrl(group);
@@ -1507,7 +1511,7 @@ function renderQuestionCard(q, strictListening = false) {
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
     ${isSpeakingPracticeQuestion(q) ? "<small>Optional warm-up. This practice task is not graded.</small>" : ""}
     ${taskMedia}
-    <div class="card-question-text structured-prompt">${structuredQuestionHtml(q)}</div>
+    <div class="card-question-text structured-prompt">${speakingQuestionHtml(q)}</div>
     ${speakingChoiceCarryoverHtml(q)}
     ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="${speakingChoiceReview ? "Saved option" : "Choose an option"}">
       <strong>${speakingChoiceReview ? "Choice step — no recording" : "No recording in this step"}</strong>
@@ -1642,6 +1646,74 @@ function structuredQuestionHtml(question) {
   return sanitizeStructuredHtml(question.question_html, sourceFile, true);
 }
 
+async function loadSpeakingChoicePrompt(question) {
+  if (question.section !== "speaking" || Number(question.number) !== 5 || question.question_html) return;
+  const sourceFile = question.source_file || question.source_pages?.[0]?.file;
+  if (!sourceFile) return;
+  try {
+    const response = await fetch(sourceUrl(sourceFile), { cache: "no-store" });
+    if (!response.ok) return;
+    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody']");
+    if (!body) return;
+    const fragment = doc.createElement("div");
+    for (const child of body.children) {
+      if (/CELPIP (4-5|7-8|10-12) Response/.test(child.textContent)
+        || child.classList.contains("mod-custom") || child.id.startsWith("mod-custom")) break;
+      fragment.append(child.cloneNode(true));
+    }
+    question.question_html = fragment.innerHTML;
+  } catch {
+    // Keep the text prompt available if its saved source cannot be loaded.
+  }
+}
+
+function previousSpeakingChoiceQuestion(question) {
+  if (question.section !== "speaking" || Number(question.number) !== 5 || isSpeakingChoiceStep(question)) return null;
+  const groups = sectionGroups();
+  const groupIndex = groups.findIndex((group) => group.questions.some((item) => item.key === question.key));
+  return groupIndex > 0 ? groups[groupIndex - 1].questions.find(isSpeakingChoiceStep) : null;
+}
+
+function speakingQuestionHtml(question) {
+  const html = structuredQuestionHtml(question);
+  const previousQuestion = previousSpeakingChoiceQuestion(question);
+  const selectedIndex = previousQuestion ? speakingChoiceIndex(state.answers[previousQuestion.key]) : null;
+  if (selectedIndex !== 0 && selectedIndex !== 1) return html;
+  const choices = new DOMParser().parseFromString(structuredQuestionHtml(previousQuestion), "text/html");
+  const originalCells = speakingOptionCells(choices);
+  const selectedCell = originalCells[selectedIndex];
+  if (!selectedCell) return html;
+  const imageSources = (cell) => Array.from(cell.querySelectorAll("img")).map((img) => img.getAttribute("src"));
+  const originalImages = new Set(originalCells.flatMap(imageSources));
+  const selectedImages = new Set(imageSources(selectedCell));
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("table.kouyutable tr").forEach((row) => {
+    const cells = Array.from(row.children).filter((node) => node.tagName === "TD");
+    const optionCells = cells.filter((cell) => imageSources(cell).some((src) => originalImages.has(src)));
+    if (!optionCells.length) return;
+    let chosen = optionCells.find((cell) => imageSources(cell).some((src) => selectedImages.has(src)));
+    // Some saved prompts contain a fixed original option. Restore the actual choice.
+    if (!chosen) {
+      chosen = optionCells[0];
+      const heading = Array.from(chosen.children).find((node) => /^Your Choice$/i.test(node.textContent.trim()));
+      chosen.replaceChildren(...Array.from(selectedCell.childNodes).map((node) => node.cloneNode(true)));
+      if (heading) chosen.prepend(heading);
+    }
+    optionCells.filter((cell) => cell !== chosen).forEach((cell) => cell.remove());
+    cells.filter((cell) => /^OR$/i.test(cell.textContent.trim())).forEach((cell) => cell.remove());
+    chosen.style.removeProperty("width");
+    chosen.style.removeProperty("border-right");
+  });
+  return doc.body.innerHTML;
+}
+
+function speakingOptionCells(root) {
+  return Array.from(root?.querySelectorAll("table.kouyutable tr") || [])
+    .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD" && !/^OR$/i.test(node.textContent.trim())))
+    .find((cells) => cells.length === 2 && cells.every((cell) => cell.querySelector("img"))) || [];
+}
+
 function isSpeakingPracticeQuestion(question) {
   return question.section === "speaking" && !question.number;
 }
@@ -1673,10 +1745,7 @@ function speakingChoiceLabel(answer) {
 }
 
 function speakingChoiceCarryoverHtml(question) {
-  if (question.section !== "speaking" || isSpeakingChoiceStep(question)) return "";
-  const groups = sectionGroups();
-  const groupIndex = groups.findIndex((group) => group.questions.some((item) => item.key === question.key));
-  const previousQuestion = groupIndex > 0 ? groups[groupIndex - 1].questions.find(isSpeakingChoiceStep) : null;
+  const previousQuestion = previousSpeakingChoiceQuestion(question);
   const label = previousQuestion ? speakingChoiceLabel(state.answers[previousQuestion.key]) : "";
   return label ? `<aside class="speaking-choice-carryover">
     <span>Your selected option</span>
@@ -1688,16 +1757,12 @@ async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = f
   const selector = card.querySelector(".speaking-choice-options");
   if (!selector) return null;
 
-  let optionCells = Array.from(card.querySelectorAll(".structured-prompt table.kouyutable tr"))
-    .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD"))
-    .find((cells) => cells.length >= 2) || [];
+  let optionCells = speakingOptionCells(card.querySelector(".structured-prompt"));
   if (optionCells.length < 2 && question.source_file) {
     try {
       const html = await fetch(sourceUrl(question.source_file), { cache: "no-store" }).then((response) => response.text());
       const doc = new DOMParser().parseFromString(html, "text/html");
-      optionCells = Array.from(doc.querySelectorAll("table.kouyutable tr"))
-        .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD"))
-        .find((cells) => cells.length >= 2) || [];
+      optionCells = speakingOptionCells(doc);
     } catch {
       // Generic labels remain usable if the saved source page cannot be loaded.
     }
