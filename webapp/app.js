@@ -804,7 +804,9 @@ async function render() {
     || state.section === "writing"
     || state.section === "speaking";
   sourcePanel.hidden = hideSource;
-  document.querySelector(".practice-grid").classList.toggle("question-only", hideSource);
+  const practiceGrid = document.querySelector(".practice-grid");
+  practiceGrid.classList.toggle("question-only", hideSource);
+  practiceGrid.classList.toggle("speaking-layout", state.section === "speaking");
   $("sourcePanelTitle").textContent = state.section === "listening" ? "Transcript" : "Source";
   if (!hideSource) await renderSource(group, state.section === "listening" && submitted);
   const speakingComplete = state.section === "speaking"

@@ -609,6 +609,10 @@ h1 {
   justify-content: center;
 }
 
+.practice-grid.question-only.speaking-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .source-panel,
 .question-panel {
   height: var(--practice-panel-height);
