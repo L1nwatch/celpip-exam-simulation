@@ -15,9 +15,9 @@ if Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome").exists()
 
 IMAGE_SOURCE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
 IMAGE = f'src="{IMAGE_SOURCE}"'
-OPTIONS = [f'<td><img src="{IMAGE_SOURCE}#{index}"><strong>{label}</strong><ul><li>{detail}</li></ul></td>'
+OPTIONS = [f'<td><img src="{IMAGE_SOURCE}#{index}"><span style="font-weight: bold">{label}</span><ul><li>{detail}</li></ul></td>'
            for index, (label, detail) in enumerate([("Art camp", "Paint a mural"), ("Sports camp", "Play tennis")])]
-CHOICE_HTML = '<table class="kouyutable"><tr>' + "".join(OPTIONS) + '</tr></table>'
+CHOICE_HTML = '<div><p><span>Instructions</span><br><strong>This task is made up of THREE parts:</strong></p><ul><li>Choose an option</li><li>Preparation time</li><li>Speaking</li></ul></div><table class="kouyutable"><tr>' + "".join(OPTIONS) + '</tr></table>'
 NEW_OPTION = f'<p>Friend\'s Choice</p><table class="kouyutable"><tr><td><img {IMAGE}></td><td><strong>Science camp</strong><ul><li>Build a robot</li></ul></td></tr></table>'
 PERSUASION_HTML = NEW_OPTION + '<p>Your Choice</p><table class="kouyutable"><tr>' + '<td>OR</td>'.join(OPTIONS) + '</tr></table>'
 
@@ -166,7 +166,7 @@ class SpeakingChoiceUiTests(unittest.TestCase):
             with self.subTest(index=index):
                 self.select(index)
                 self.assert_selected_prompt(index)
-                self.assertIn("Your Choice", self.driver.find_element("id", "cards").text)
+                self.assertIn("Your selected option", self.driver.find_element("id", "cards").text)
 
     def test_legacy_prompt_loads_from_source_and_omits_samples(self):
         self.select(1)
@@ -181,6 +181,15 @@ class SpeakingChoiceUiTests(unittest.TestCase):
         """, html)
         self.assertNotIn("Sample response", result)
         self.assert_selected_prompt(1)
+
+    def test_generic_instructions_can_expand_without_hiding_options(self):
+        self.render_card(1)
+        details = self.driver.find_element('css selector', '.speaking-comparison-instructions')
+        self.assertFalse(details.get_attribute('open'))
+        self.assertIn('Art camp', self.driver.find_element('id', 'cards').text)
+        details.find_element('tag name', 'summary').click()
+        self.assertIn('This task is made up of THREE parts', details.text)
+        self.assertIn('Preparation time', details.text)
 
     def test_failed_source_load_preserves_text_prompt(self):
         self.driver.execute_async_script("""
