@@ -1,4 +1,5 @@
 import functools
+import re
 import shutil
 import subprocess
 import sys
@@ -131,7 +132,7 @@ class PracticeLayoutUiTests(unittest.TestCase):
                     self.driver.execute_script("setSidebarCollapsed(arguments[0])", collapsed)
                     self.assert_full_width()
 
-    def render_comparison(self, choice_step=False, review=False):
+    def render_comparison(self, choice_step=False, review=False, long_text=False):
         image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
         cells = [f'<td><img src="{image}#{i}" style="width:100%;height:600px">'
                  f'<strong>{label}</strong><ul><li>Spend three exciting hours with the team.</li>'
@@ -140,6 +141,22 @@ class PracticeLayoutUiTests(unittest.TestCase):
         choose = '<p>Choose an outing. You do not need to speak for this part.</p><table class="kouyutable"><tr>' + ''.join(cells) + '</tr></table>'
         rival = f'<p>Your Co-worker’s Choice</p><table class="kouyutable"><tr><td><img src="{image}#rival"></td><td><strong>Street food</strong><ul><li>Eat different types of food.</li><li>Stroll downtown or sit in public parks.</li><li>Affordable prices.</li></ul></td></tr></table>'
         persuade = '<p>Persuade your co-worker that your choice is more suitable by comparing the two options.</p><p>Preparation: 60 seconds. Recording: 60 seconds.</p><p>&nbsp;</p>' + rival + '<p>Your Choice</p><table class="kouyutable"><tr>' + '<td>OR</td>'.join(cells) + '</tr></table>'
+        if long_text:
+            details = '<ul>' + ''.join(f'<li>{text}</li>' for text in (
+                'A complete afternoon of guided activities for staff members and their guests.',
+                'Refreshments, equipment and a space to relax are included at no additional charge.',
+                'Accommodates up to 50 people, including visitors who have never tried the activity.',
+                'Available during the summer, with flexible dates to fit the entire group schedule.',
+            )) + '</ul>'
+            choose = re.sub(r'<ul>.*?</ul>', details, choose)
+            persuade = re.sub(r'<ul>.*?</ul>', details, persuade)
+            prompt = ('Your team is planning a summer event for staff and their guests. '
+                      'Compare the activities, costs and facilities in both options. '
+                      'Choose the option you prefer and explain why it would be more suitable for the group.')
+            choose = choose.replace('<p>Choose an outing. You do not need to speak for this part.</p>',
+                                    f'<p><span style="font-size: 18px; font-weight: bold">{prompt}</span></p>')
+            persuade = persuade.replace('Persuade your co-worker that your choice is more suitable by comparing the two options.',
+                                        f'<span style="font-size: 18px; font-weight: bold">{prompt}</span>')
         error = self.driver.execute_async_script("""
             const [choose, persuade, choiceStep, review, done] = arguments;
             stopPracticePlayback(); stopTimer();
@@ -182,6 +199,20 @@ class PracticeLayoutUiTests(unittest.TestCase):
                     if layout['recorder']:
                         self.assertGreaterEqual(layout['recorder']['top'], layout['panel']['top'])
                         self.assertLess(layout['recorder']['bottom'], first['top'])
+                    self.assertFalse(layout['overflow'])
+
+    def test_task5_long_options_fit_with_navigation_and_recorder(self):
+        for width in (1366, 1512):
+            self.set_viewport(width, 771)
+            for choice_step, review in ((True, False), (True, True), (False, False), (False, True)):
+                self.render_comparison(choice_step, review, long_text=True)
+                self.driver.execute_script('setSidebarCollapsed(false)')
+                WebDriverWait(self.driver, 3).until(lambda d: d.execute_script(
+                    "return !document.getElementById('practiceView').getAnimations().length"))
+                with self.subTest(width=width, choice_step=choice_step, review=review):
+                    layout = self.comparison_layout()
+                    self.assertEqual(2, len(layout['options']))
+                    self.assertLessEqual(max(card['bottom'] for card in layout['options']), layout['controls']['top'])
                     self.assertFalse(layout['overflow'])
 
     def test_task5_recorder_stays_visible_while_review_scrolls(self):

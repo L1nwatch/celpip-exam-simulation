@@ -1149,10 +1149,21 @@ textarea {
 }
 
 /* Keep Task 5's two options and live timer in the same working area. */
+.speaking-layout .question-panel:has(.speaking-comparison-task) {
+  padding: 12px;
+}
+
+.speaking-layout .question-panel:has(.speaking-comparison-task) > .controls {
+  bottom: -12px;
+  margin: 12px -12px -12px;
+  padding: 10px 12px 12px;
+}
+
 .speaking-comparison-task {
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .speaking-comparison-task > h2 {
@@ -1168,9 +1179,9 @@ textarea {
   display: grid;
   grid-template-columns: minmax(100px, auto) minmax(0, 1fr);
   align-items: center;
-  gap: 4px 16px;
+  gap: 2px 16px;
   margin: 0;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: #f8fafc;
   box-shadow: 0 3px 10px rgb(26 39 58 / 8%);
 }
@@ -1203,6 +1214,7 @@ textarea {
 
 .speaking-comparison-task .structured-prompt > p {
   margin-bottom: 8px;
+  line-height: 1.45;
 }
 
 .speaking-comparison-instructions {
@@ -1252,7 +1264,7 @@ textarea {
 
 .speaking-option-content {
   display: grid;
-  grid-template-columns: minmax(90px, .36fr) minmax(0, .64fr);
+  grid-template-columns: minmax(90px, .30fr) minmax(0, .70fr);
   align-items: start;
   gap: 14px;
 }

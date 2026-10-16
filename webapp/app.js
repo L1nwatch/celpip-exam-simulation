@@ -1772,6 +1772,9 @@ function compactSpeakingComparisonHtml(question, html) {
   });
   tables[0].before(grid);
   tables.forEach((table) => table.remove());
+  doc.querySelectorAll("p > span[style]").forEach((node) => {
+    if (Number.parseFloat(node.style.fontSize) > 16) node.style.removeProperty("font-size");
+  });
   // Keep the reusable three-part instructions available without pushing the
   // actual scenario, options and preparation timer below the working area.
   const instructionBlock = Array.from(doc.body.children).find((node) =>
