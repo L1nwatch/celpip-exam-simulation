@@ -1148,6 +1148,161 @@ textarea {
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
+/* Keep Task 5's two options and live timer in the same working area. */
+.speaking-comparison-task {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.speaking-comparison-task > h2 {
+  order: -2;
+  margin: 0;
+}
+
+.speaking-comparison-task > .speaking-recorder {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  order: -1;
+  display: grid;
+  grid-template-columns: minmax(100px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 10px 12px;
+  background: #f8fafc;
+  box-shadow: 0 3px 10px rgb(26 39 58 / 8%);
+}
+
+.speaking-comparison-task .recorder-actions,
+.speaking-comparison-task .recorder-status {
+  grid-column: 1 / -1;
+}
+
+.speaking-comparison-task .speaking-recorder:has(.recorded-player:not([hidden])) .recorder-actions {
+  grid-column: auto;
+}
+
+.speaking-comparison-task .recorded-player {
+  margin-top: 0;
+}
+
+.speaking-comparison-task .recording-time {
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.speaking-comparison-task .recorder-status {
+  margin-top: 4px;
+}
+
+.speaking-comparison-task > .structured-prompt {
+  margin: 0;
+}
+
+.speaking-comparison-task .structured-prompt > p {
+  margin-bottom: 8px;
+}
+
+.speaking-comparison-instructions {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.speaking-comparison-instructions summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.speaking-comparison-instructions[open] summary {
+  margin-bottom: 8px;
+}
+
+.speaking-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.speaking-option-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.speaking-option-card.is-selected {
+  border-color: var(--accent);
+  background: #f2f8f5;
+}
+
+.structured-prompt .speaking-option-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.speaking-option-card.is-selected .speaking-option-label {
+  color: var(--accent);
+}
+
+.speaking-option-content {
+  display: grid;
+  grid-template-columns: minmax(90px, .36fr) minmax(0, .64fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.speaking-option-content img {
+  display: block;
+  width: 100%;
+  height: clamp(110px, 18vh, 180px);
+  margin: 0;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.speaking-option-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.speaking-option-content ul,
+.speaking-option-content ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.speaking-option-content li {
+  margin: 4px 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.speaking-comparison-task > .speaking-choice-selector {
+  margin-top: 0;
+  padding: 10px 12px;
+}
+
+@media (max-width: 580px) {
+  .speaking-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .speaking-comparison-task > .speaking-recorder {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .speaking-option-content img {
+    height: 130px;
+  }
+}
+
 .speaking-choice-selector {
   margin-top: 14px;
   padding: 14px;

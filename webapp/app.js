@@ -1509,12 +1509,14 @@ function renderQuestionCard(q, strictListening = false) {
 
   const speakingChoiceStep = isSpeakingChoiceStep(q);
   const speakingChoiceReview = speakingChoiceStep && Boolean(state.submissions.speaking);
-  return `<section class="question-card" data-key="${q.key}">
+  const speakingPrompt = compactSpeakingComparisonHtml(q, speakingQuestionHtml(q));
+  const comparisonLayout = speakingPrompt.includes('class="speaking-comparison-grid"');
+  return `<section class="question-card ${comparisonLayout ? "speaking-comparison-task" : ""}" data-key="${q.key}">
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
     ${isSpeakingPracticeQuestion(q) ? "<small>Optional warm-up. This practice task is not graded.</small>" : ""}
     ${taskMedia}
-    <div class="card-question-text structured-prompt">${speakingQuestionHtml(q)}</div>
-    ${speakingChoiceCarryoverHtml(q)}
+    <div class="card-question-text structured-prompt">${speakingPrompt}</div>
+    ${comparisonLayout ? "" : speakingChoiceCarryoverHtml(q)}
     ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="${speakingChoiceReview ? "Saved option" : "Choose an option"}">
       <strong>${speakingChoiceReview ? "Choice step — no recording" : "No recording in this step"}</strong>
       <p>${speakingChoiceReview
@@ -1710,7 +1712,93 @@ function speakingQuestionHtml(question) {
   return doc.body.innerHTML;
 }
 
+// Saved Task 5 pages use several table layouts. Normalize only complete pairs,
+// after restoring the selected option, so legacy/missing prompts keep their fallback.
+function compactSpeakingComparisonHtml(question, html) {
+  if (question.section !== "speaking" || Number(question.number) !== 5) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const tables = Array.from(doc.querySelectorAll("table.kouyutable"));
+  let options;
+  if (tables.length === 1) {
+    const cells = speakingOptionCells(doc);
+    if (cells.length === 2) options = cells.map((cell) => [cell]);
+  } else if (tables.length === 2 && tables.every((table) => table.querySelectorAll("img").length === 1)) {
+    options = tables.map((table) => Array.from(table.querySelectorAll("td")));
+  }
+  if (!options || options.some((cells) => cells.reduce((count, cell) => count + cell.querySelectorAll("img").length, 0) !== 1)) return html;
+
+  const choiceStep = isSpeakingChoiceStep(question);
+  const previous = previousSpeakingChoiceQuestion(question);
+  const selectedIndex = speakingChoiceIndex(state.answers[(previous || question).key]);
+  const previousDoc = previous ? new DOMParser().parseFromString(structuredQuestionHtml(previous), "text/html") : null;
+  const selectedSource = previousDoc && speakingOptionCells(previousDoc)[selectedIndex]?.querySelector("img")?.getAttribute("src");
+  const grid = doc.createElement("div");
+  grid.className = "speaking-comparison-grid";
+  options.forEach((cells, index) => {
+    const table = cells[0].closest("table");
+    const preceding = table.previousElementSibling;
+    const inlineLabel = Array.from(cells[0].children).find((node) => /^Your Choice$/i.test(node.textContent.trim()));
+    const heading = preceding?.tagName === "P" && /choice/i.test(preceding.textContent) ? preceding : inlineLabel;
+    const source = cells.flatMap((cell) => Array.from(cell.querySelectorAll("img")))[0].getAttribute("src");
+    const selected = choiceStep ? selectedIndex === index : Boolean(selectedSource && source === selectedSource);
+    const label = choiceStep ? `Option ${index + 1}` : selected ? "Your selected option" : heading?.textContent.trim() || "Other option";
+    const card = doc.createElement("section");
+    card.className = `speaking-option-card${selected ? " is-selected" : ""}`;
+    card.setAttribute("aria-label", label);
+    const title = doc.createElement("p");
+    title.className = "speaking-option-label";
+    title.textContent = label;
+    const content = doc.createElement("div");
+    content.className = "speaking-option-content";
+    cells.forEach((cell) => Array.from(cell.childNodes).forEach((node) => {
+      if (node !== inlineLabel) content.append(node.cloneNode(true));
+    }));
+    const optionTitle = content.querySelector("strong, b, [style*='font-weight: bold']");
+    content.querySelectorAll("[style], [width], [height]").forEach((node) => {
+      node.removeAttribute("style");
+      node.removeAttribute("width");
+      node.removeAttribute("height");
+    });
+    optionTitle?.classList.add("speaking-option-title");
+    const image = content.querySelector("img");
+    image.remove();
+    const details = doc.createElement("div");
+    details.className = "speaking-option-details";
+    details.append(...Array.from(content.childNodes));
+    content.replaceChildren(image, details);
+    card.append(title, content);
+    grid.append(card);
+    if (heading === preceding) heading.remove();
+  });
+  tables[0].before(grid);
+  tables.forEach((table) => table.remove());
+  // Keep the reusable three-part instructions available without pushing the
+  // actual scenario, options and preparation timer below the working area.
+  const instructionBlock = Array.from(doc.body.children).find((node) =>
+    /^Instructions\s*This task is made up of/i.test(node.textContent.trim()) && node.querySelector("ul"));
+  const instructionHeading = Array.from(doc.body.children).find((node) => /^Instructions$/i.test(node.textContent.trim()));
+  const instructionIntro = instructionHeading?.nextElementSibling;
+  const instructionSteps = instructionIntro?.nextElementSibling;
+  const instructionNodes = instructionBlock ? [instructionBlock]
+    : /^This task is made up of/i.test(instructionIntro?.textContent.trim() || "") && instructionSteps?.tagName === "UL"
+      ? [instructionHeading, instructionIntro, instructionSteps] : [];
+  if (instructionNodes.length) {
+    const details = doc.createElement("details");
+    details.className = "speaking-comparison-instructions";
+    const summary = doc.createElement("summary");
+    summary.textContent = "Task instructions";
+    instructionNodes[0].before(details);
+    details.append(summary, ...instructionNodes);
+  }
+  doc.querySelectorAll("p").forEach((node) => {
+    if (!node.textContent.trim() && !node.querySelector("img, audio, video")) node.remove();
+  });
+  return doc.body.innerHTML;
+}
+
 function speakingOptionCells(root) {
+  const compactOptions = Array.from(root?.querySelectorAll(".speaking-option-content") || []);
+  if (compactOptions.length === 2) return compactOptions;
   return Array.from(root?.querySelectorAll("table.kouyutable tr") || [])
     .map((row) => Array.from(row.children).filter((node) => node.tagName === "TD" && !/^OR$/i.test(node.textContent.trim())))
     .find((cells) => cells.length === 2 && cells.every((cell) => cell.querySelector("img"))) || [];
@@ -1772,7 +1860,7 @@ async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = f
 
   const labels = [0, 1].map((index) => {
     const cell = optionCells[index];
-    const emphasized = cell?.querySelector("strong, b, [style*='font-weight: bold']");
+    const emphasized = cell?.querySelector(".speaking-option-title, strong, b, [style*='font-weight: bold']");
     return emphasized?.textContent?.trim() || `Option ${index + 1}`;
   });
   selector.innerHTML = labels.map((label, index) => `
@@ -1788,6 +1876,9 @@ async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = f
       const selected = buttonIndex === safeIndex;
       button.classList.toggle("selected", selected);
       button.setAttribute("aria-pressed", String(selected));
+    });
+    card.querySelectorAll(".speaking-option-card").forEach((option, optionIndex) => {
+      option.classList.toggle("is-selected", optionIndex === safeIndex);
     });
     state.answers[question.key] = `choice:${safeIndex}:${encodeURIComponent(labels[safeIndex])}`;
     if (status) {

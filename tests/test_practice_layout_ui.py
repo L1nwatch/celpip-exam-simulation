@@ -131,6 +131,94 @@ class PracticeLayoutUiTests(unittest.TestCase):
                     self.driver.execute_script("setSidebarCollapsed(arguments[0])", collapsed)
                     self.assert_full_width()
 
+    def render_comparison(self, choice_step=False, review=False):
+        image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+        cells = [f'<td><img src="{image}#{i}" style="width:100%;height:600px">'
+                 f'<strong>{label}</strong><ul><li>Spend three exciting hours with the team.</li>'
+                 '<li>Enjoy food and a range of activities.</li><li>Accommodates up to 50 people.</li></ul></td>'
+                 for i, label in enumerate(('Sailing trip', 'Culture night'))]
+        choose = '<p>Choose an outing. You do not need to speak for this part.</p><table class="kouyutable"><tr>' + ''.join(cells) + '</tr></table>'
+        rival = f'<p>Your Co-worker’s Choice</p><table class="kouyutable"><tr><td><img src="{image}#rival"></td><td><strong>Street food</strong><ul><li>Eat different types of food.</li><li>Stroll downtown or sit in public parks.</li><li>Affordable prices.</li></ul></td></tr></table>'
+        persuade = '<p>Persuade your co-worker that your choice is more suitable by comparing the two options.</p><p>Preparation: 60 seconds. Recording: 60 seconds.</p><p>&nbsp;</p>' + rival + '<p>Your Choice</p><table class="kouyutable"><tr>' + '<td>OR</td>'.join(cells) + '</tr></table>'
+        error = self.driver.execute_async_script("""
+            const [choose, persuade, choiceStep, review, done] = arguments;
+            stopPracticePlayback(); stopTimer();
+            const question = (key, html, text) => ({key, section: 'speaking', number: 5,
+                question_type: 'speaking_task', source_file: key + '.html', question_html: html,
+                question_text: text, timing: {preparation_seconds: 60, recording_seconds: key === 'choose' ? 0 : 60}});
+            state.data = {questions: [question('choose', choose, 'You do not need to speak for this part.'),
+                question('persuade', persuade, 'Persuade your co-worker.')]};
+            state.section = 'speaking'; state.sectionIntro = false; state.index = choiceStep ? 0 : 1;
+            state.answers = {choose: 'choice:0:Sailing%20trip', persuade: 'recording:fixture'};
+            state.submissions = review ? {speaking: {submitted_at: '2026-10-15'}} : {};
+            render().then(() => {stopPracticePlayback(); stopTimer(); done(null);}).catch(e => done(e.message));
+        """, choose, persuade, choice_step, review)
+        self.assertIsNone(error)
+
+    def comparison_layout(self):
+        return self.driver.execute_script("""
+            const rect = el => {const {top, bottom, left, right} = el.getBoundingClientRect(); return {top, bottom, left, right};};
+            return {options: [...document.querySelectorAll('.speaking-option-card')].map(rect),
+                recorder: document.querySelector('.speaking-recorder') && rect(document.querySelector('.speaking-recorder')),
+                panel: rect(document.querySelector('.question-panel')), controls: rect(document.querySelector('.controls')),
+                overflow: document.documentElement.scrollWidth > innerWidth};
+        """)
+
+    def test_task5_options_and_recorder_fit_together_on_laptop(self):
+        for width, height in ((1512, 771), (1366, 768), (1920, 1080)):
+            self.set_viewport(width, height)
+            for choice_step, review in ((True, False), (True, True), (False, False), (False, True)):
+                self.render_comparison(choice_step, review)
+                self.driver.execute_script('setSidebarCollapsed(false)')
+                WebDriverWait(self.driver, 3).until(lambda d: d.execute_script(
+                    "return !document.getElementById('practiceView').getAnimations().length"))
+                with self.subTest(width=width, choice_step=choice_step, review=review):
+                    layout = self.comparison_layout()
+                    self.assertEqual(2, len(layout['options']))
+                    first, second = layout['options']
+                    self.assertAlmostEqual(first['top'], second['top'], delta=1)
+                    self.assertLess(first['right'], second['left'])
+                    self.assertLessEqual(max(first['bottom'], second['bottom']), layout['controls']['top'])
+                    if layout['recorder']:
+                        self.assertGreaterEqual(layout['recorder']['top'], layout['panel']['top'])
+                        self.assertLess(layout['recorder']['bottom'], first['top'])
+                    self.assertFalse(layout['overflow'])
+
+    def test_task5_recorder_stays_visible_while_review_scrolls(self):
+        self.set_viewport(1512, 771)
+        self.render_comparison(review=True)
+        self.driver.execute_script("document.querySelector('.question-panel').scrollTop = 250")
+        layout = self.comparison_layout()
+        self.assertGreaterEqual(layout['recorder']['top'], layout['panel']['top'])
+        self.assertLess(layout['recorder']['bottom'], layout['controls']['top'])
+
+    def test_task5_stacks_on_phone_and_fits_tablet(self):
+        self.render_comparison()
+        for width in (390, 768):
+            self.set_viewport(width, 1000)
+            with self.subTest(width=width):
+                layout = self.comparison_layout()
+                first, second = layout['options']
+                if width == 390:
+                    self.assertGreater(second['top'], first['bottom'])
+                else:
+                    self.assertAlmostEqual(first['top'], second['top'], delta=1)
+                self.assertFalse(layout['overflow'])
+
+    def test_task5_playback_and_live_indicator_fit_without_horizontal_scroll(self):
+        self.render_comparison(review=True)
+        for width, height in ((390, 1000), (1512, 771)):
+            self.set_viewport(width, height)
+            self.driver.execute_script("""
+                document.querySelector('.recorded-player').hidden = false;
+                document.querySelector('.recording-indicator').hidden = false;
+                document.querySelector('.speaking-recorder').classList.add('is-recording');
+            """)
+            with self.subTest(width=width):
+                self.assertFalse(self.comparison_layout()['overflow'])
+                self.assertTrue(self.driver.find_element('css selector', '.recording-indicator').is_displayed())
+                self.assertTrue(self.driver.find_element('css selector', '.recorded-player').is_displayed())
+
     def test_switching_sections_keeps_writing_and_reading_layouts(self):
         self.render_section(review=True)
         self.assert_full_width()
