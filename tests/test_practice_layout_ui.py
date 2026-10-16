@@ -1,4 +1,5 @@
 import functools
+import json
 import re
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import threading
 import unittest
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -21,6 +23,34 @@ if Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome").exists()
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):
+    recordings = []
+
+    def do_GET(self):
+        if urlparse(self.path).path == '/api/recordings':
+            self.send_json(200, {'recordings': []})
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != '/api/recordings':
+            self.send_error(404)
+            return
+        params = parse_qs(parsed.query)
+        body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+        self.recordings.append({'question_key': params.get('question_key', [''])[0],
+                                'duration': float(params.get('duration_seconds', ['0'])[0]),
+                                'size': len(body), 'content_type': self.headers.get('Content-Type', '')})
+        self.send_json(201, {'recording_id': 'live-flow-fixture'})
+
+    def send_json(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *args):
         pass
 
@@ -45,6 +75,8 @@ class PracticeLayoutUiTests(unittest.TestCase):
         options.binary_location = CHROME
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
+        options.add_argument("--use-fake-device-for-media-stream")
+        options.add_argument("--use-fake-ui-for-media-stream")
         cls.driver = webdriver.Chrome(options=options)
 
     @classmethod
@@ -132,7 +164,7 @@ class PracticeLayoutUiTests(unittest.TestCase):
                     self.driver.execute_script("setSidebarCollapsed(arguments[0])", collapsed)
                     self.assert_full_width()
 
-    def render_comparison(self, choice_step=False, review=False, long_text=False):
+    def render_comparison(self, choice_step=False, review=False, long_text=False, live_flow=False):
         image = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
         cells = [f'<td><img src="{image}#{i}" style="width:100%;height:600px">'
                  f'<strong>{label}</strong><ul><li>Spend three exciting hours with the team.</li>'
@@ -158,18 +190,20 @@ class PracticeLayoutUiTests(unittest.TestCase):
             persuade = persuade.replace('Persuade your co-worker that your choice is more suitable by comparing the two options.',
                                         f'<span style="font-size: 18px; font-weight: bold">{prompt}</span>')
         error = self.driver.execute_async_script("""
-            const [choose, persuade, choiceStep, review, done] = arguments;
+            const [choose, persuade, choiceStep, review, liveFlow, done] = arguments;
             stopPracticePlayback(); stopTimer();
             const question = (key, html, text) => ({key, section: 'speaking', number: 5,
                 question_type: 'speaking_task', source_file: key + '.html', question_html: html,
-                question_text: text, timing: {preparation_seconds: 60, recording_seconds: key === 'choose' ? 0 : 60}});
+                question_text: text, timing: {preparation_seconds: liveFlow ? 3 : 60, recording_seconds: key === 'choose' ? 0 : liveFlow ? 2 : 60}});
             state.data = {questions: [question('choose', choose, 'You do not need to speak for this part.'),
                 question('persuade', persuade, 'Persuade your co-worker.')]};
+            if (liveFlow) state.data.questions.push({...question('next-task', '<p>Give your friend advice.</p>', 'Give advice.'),
+                number: 6, timing: {preparation_seconds: 600, recording_seconds: 60}});
             state.section = 'speaking'; state.sectionIntro = false; state.index = choiceStep ? 0 : 1;
-            state.answers = {choose: 'choice:0:Sailing%20trip', persuade: 'recording:fixture'};
+            state.answers = liveFlow ? {} : {choose: 'choice:0:Sailing%20trip', persuade: 'recording:fixture'};
             state.submissions = review ? {speaking: {submitted_at: '2026-10-15'}} : {};
             render().then(() => {stopPracticePlayback(); stopTimer(); done(null);}).catch(e => done(e.message));
-        """, choose, persuade, choice_step, review)
+        """, choose, persuade, choice_step, review, live_flow)
         self.assertIsNone(error)
 
     def comparison_layout(self):
@@ -214,6 +248,68 @@ class PracticeLayoutUiTests(unittest.TestCase):
                     self.assertEqual(2, len(layout['options']))
                     self.assertLessEqual(max(card['bottom'] for card in layout['options']), layout['controls']['top'])
                     self.assertFalse(layout['overflow'])
+
+    def assert_live_comparison_visible(self):
+        layout = self.comparison_layout()
+        self.assertEqual(2, len(layout['options']))
+        self.assertLessEqual(max(card['bottom'] for card in layout['options']), layout['controls']['top'])
+        self.assertGreaterEqual(layout['recorder']['top'], layout['panel']['top'])
+        self.assertLess(layout['recorder']['bottom'], min(card['top'] for card in layout['options']))
+        self.assertFalse(layout['overflow'])
+
+    def run_live_comparison(self, selected=None):
+        PreviewHandler.recordings.clear()
+        self.set_viewport(1366, 768)
+        self.render_comparison(choice_step=True, long_text=True, live_flow=True)
+        self.driver.execute_script('setSidebarCollapsed(false)')
+        wait = WebDriverWait(self.driver, 12)
+        wait.until(lambda d: 'no recording in this step' in d.find_element('css selector', '.recorder-status').text)
+        buttons = self.driver.find_elements('css selector', '.speaking-choice-button')
+        if selected is not None:
+            buttons[selected].click()
+            self.assertEqual('true', buttons[selected].get_attribute('aria-pressed'))
+        self.assertFalse(self.driver.find_element('css selector', '.recording-indicator').is_displayed())
+        self.assert_live_comparison_visible()
+        self.assertFalse(PreviewHandler.recordings)
+
+        wait.until(lambda d: d.execute_script("return state.index === 1") and
+                   'Preparation time' in d.find_element('css selector', '.recorder-status').text)
+        answer = self.driver.execute_script("return state.answers.choose")
+        chosen_index = int(answer.split(':')[1])
+        if selected is not None:
+            self.assertEqual(selected, chosen_index)
+        self.assertIn(chosen_index, (0, 1))
+        expected = ('Sailing trip', 'Culture night')[chosen_index]
+        self.assertIn(expected, self.driver.find_element('css selector', '.speaking-option-card.is-selected').text)
+        self.assertFalse(self.driver.find_element('css selector', '.recording-indicator').is_displayed())
+        self.assert_live_comparison_visible()
+        initial = self.driver.find_element('css selector', '.recording-time').text
+        wait.until(lambda d: d.find_element('css selector', '.recording-time').text != initial)
+
+        wait.until(lambda d: d.find_element('css selector', '.recording-indicator').is_displayed())
+        self.assertIn('is-recording', self.driver.find_element('css selector', '.speaking-recorder').get_attribute('class'))
+        self.assertIn('Recording in progress', self.driver.find_element('css selector', '.recorder-status').text)
+        self.assert_live_comparison_visible()
+        self.assertFalse(self.driver.find_element('css selector', '.recorded-player').is_displayed())
+        self.assertFalse(PreviewHandler.recordings)
+
+        wait.until(lambda d: d.execute_script("return state.index === 2"))
+        self.assertEqual('recording:live-flow-fixture', self.driver.execute_script('return state.answers.persuade'))
+        self.assertEqual(1, len(PreviewHandler.recordings))
+        recording = PreviewHandler.recordings[0]
+        self.assertEqual('persuade', recording['question_key'])
+        self.assertGreater(recording['size'], 0)
+        self.assertGreaterEqual(recording['duration'], 1)
+        self.assertIn('audio/', recording['content_type'])
+        self.assertTrue(self.driver.execute_script("return document.querySelector('.question-panel').scrollTop === 0"))
+
+    def test_task5_live_choice_preparation_recording_and_auto_advance(self):
+        for selected in (0, 1):
+            with self.subTest(selected=selected):
+                self.run_live_comparison(selected)
+
+    def test_task5_live_flow_chooses_an_option_when_none_is_selected(self):
+        self.run_live_comparison()
 
     def test_task5_recorder_stays_visible_while_review_scrolls(self):
         self.set_viewport(1512, 771)
