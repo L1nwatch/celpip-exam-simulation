@@ -60,7 +60,7 @@ class SpeakingChoiceUiTests(unittest.TestCase):
             renderStats = () => {};
             scheduleDraftSync = () => {};
             window.speakingTest = {state, renderQuestionCard, speakingQuestionHtml,
-                bindSpeakingChoiceSelector, loadSpeakingChoicePrompt, readLocalDraft};
+                bindSpeakingChoiceSelector, loadSpeakingPrompt, readLocalDraft};
         """)
         questions = [
             {"key": "task4", "number": 4, "question_text": "Make a prediction."},
@@ -177,7 +177,7 @@ class SpeakingChoiceUiTests(unittest.TestCase):
             const q = speakingTest.state.data.questions[2];
             delete q.question_html;
             window.fetch = async () => ({ok: true, text: async () => html});
-            speakingTest.loadSpeakingChoicePrompt(q).then(() => done(q.question_html));
+            speakingTest.loadSpeakingPrompt(q).then(() => done(q.question_html));
         """, html)
         self.assertNotIn("Sample response", result)
         self.assert_selected_prompt(1)
@@ -197,9 +197,79 @@ class SpeakingChoiceUiTests(unittest.TestCase):
             const q = speakingTest.state.data.questions[2];
             delete q.question_html;
             window.fetch = async () => { throw new Error('Offline'); };
-            speakingTest.loadSpeakingChoicePrompt(q).then(done);
+            speakingTest.loadSpeakingPrompt(q).then(done);
         """)
         self.assertIn("Persuade your friend.", self.render_card(2))
+
+    def test_all_other_speaking_tasks_recover_structure_without_samples_or_source_styles(self):
+        html = f'''<main itemprop="articleBody"><div style="min-height: 900px; width: 1200px">
+            <p><span style="font-size: 28px; font-weight: bold; color: red">A fictional workplace needs your advice.</span>
+            <br><span style="font-size: 10px">Preparation: <strong>30 seconds</strong> Recording: <strong>60 seconds</strong></span></p>
+            <p>Choose ONE:<br>EITHER<br>Explain the first option.<br>OR<br>Explain the second option.</p>
+            <p>&nbsp;</p><img src="../images/scene.jpg" width="1800" height="1200" style="margin-top: 100px">
+            <p>*NOTE: This practice test is not recording your response.</p></div>
+            <div data-rlta-element="container"><p>CELPIP 10–12 Response</p><p>HIDDEN SAMPLE</p></div>
+            <div class="mod-custom"><textarea>OLD EDITOR</textarea></div></main>'''
+        for number in (None, 1, 2, 3, 4, 6, 7, 8):
+            with self.subTest(task=number):
+                result = self.driver.execute_async_script("""
+                    const [html, number, done] = arguments;
+                    const q = speakingTest.state.data.questions[0];
+                    delete q.question_html; q.number = number;
+                    q.media = [{type: 'image', path: 'images/scene.jpg'}];
+                    window.fetch = async () => ({ok: true, text: async () => html});
+                    speakingTest.loadSpeakingPrompt(q).then(() => {
+                        document.getElementById('cards').innerHTML = speakingTest.renderQuestionCard(q);
+                        const prompt = document.querySelector('.speaking-prompt');
+                        done({text: prompt.innerText, paragraphs: prompt.querySelectorAll('p').length,
+                            breaks: prompt.querySelectorAll('br').length,
+                            emphasis: prompt.querySelector('strong').textContent,
+                            styles: prompt.querySelectorAll('[style], [width], [height]').length,
+                            sources: [...prompt.querySelectorAll('img')].map(img => img.getAttribute('src')),
+                            timing: prompt.querySelector('.speaking-task-timing')?.textContent});
+                    }).catch(e => done({error: e.message}));
+                """, html, number)
+                self.assertNotIn('error', result)
+                self.assertIn('A fictional workplace needs your advice.', result['text'])
+                self.assertIn('Explain the second option.', result['text'])
+                self.assertNotIn('HIDDEN SAMPLE', result['text'])
+                self.assertNotIn('OLD EDITOR', result['text'])
+                self.assertNotIn('not recording your response', result['text'])
+                self.assertEqual(2, result['paragraphs'])
+                self.assertEqual(4, result['breaks'])
+                self.assertEqual('A fictional workplace needs your advice.', result['emphasis'])
+                self.assertEqual(0, result['styles'])
+                self.assertEqual(['../materials/private/packs/local_celpip1_test1/images/scene.jpg'], result['sources'])
+                self.assertIn('Preparation:', result['timing'])
+
+    def test_missing_inline_scene_appears_after_instructions_once(self):
+        self.driver.execute_script("""
+            const q = speakingTest.state.data.questions[0];
+            q.question_html = '<p>Describe the picture below.</p>';
+            q.media = [{type: 'image', path: 'images/scene.jpg'}];
+        """)
+        self.render_card(0)
+        self.assertEqual(1, len(self.driver.find_elements('css selector', '.speaking-prompt img')))
+        self.assertEqual(['P', 'DIV'], self.driver.execute_script(
+            "return [...document.querySelector('.speaking-prompt').children].map(node => node.tagName)"))
+
+    def test_selected_task5_does_not_reintroduce_rejected_images_from_media(self):
+        self.driver.execute_script("""
+            speakingTest.state.data.questions[2].media = [0, 1, 2].map(index => ({
+                type: 'image', path: arguments[0] + (index < 2 ? '#' + index : '')}));
+        """, IMAGE_SOURCE)
+        self.select(1)
+        self.assert_selected_prompt(1)
+        self.assertFalse(self.driver.find_elements('css selector', f'img[src="{IMAGE_SOURCE}#0"]'))
+
+    def test_offline_plain_text_keeps_choice_and_timing_on_separate_lines(self):
+        self.driver.execute_script("""
+            const q = speakingTest.state.data.questions[0];
+            q.question_text = 'A friend needs advice. Choose ONE: EITHER Talk about the first option. OR Talk about the second option. Preparation: 30 seconds Recording: 60 seconds';
+        """)
+        text = self.render_card(0)
+        self.assertIn('Choose ONE:', text)
+        self.assertEqual(6, len(self.driver.find_elements('css selector', '.speaking-prompt p')))
 
 
 if __name__ == "__main__":

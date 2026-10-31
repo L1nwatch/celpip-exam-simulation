@@ -80,6 +80,9 @@ const state = {
   draftSyncTimers: new Map(),
   sectionIntro: false,
   submittingSection: false,
+  exam: null,
+  mockSaving: false,
+  practiceCleanup: null,
   timer: {
     id: null,
     remaining: 0,
@@ -109,6 +112,148 @@ function timingStorageKey(testId = state.testId) {
 
 function notesStorageKey(testId = state.testId) {
   return `${storageKey(testId)}:notes`;
+}
+
+function mockStorageKey(testId = state.testId) {
+  return `celpip-mock:${testId}`;
+}
+
+function readMockExam(testId) {
+  try {
+    const exam = JSON.parse(localStorage.getItem(mockStorageKey(testId)) || "null");
+    return exam?.testId === testId && ["active", "completed"].includes(exam.status) ? exam : null;
+  } catch {
+    return null;
+  }
+}
+
+function isMockActive() {
+  return state.exam?.status === "active";
+}
+
+function persistMockExam() {
+  if (!state.exam) return;
+  Object.assign(state.exam, {
+    section: state.section, index: state.index, sectionIntro: state.sectionIntro,
+    answers: state.answers, checked: state.checked, submissions: state.submissions,
+    timings: state.timings, notes: state.notes,
+    listeningUnlocked: [...state.listeningUnlocked],
+    listeningQuestionIndex: [...state.listeningQuestionIndex],
+  });
+  localStorage.setItem(mockStorageKey(), JSON.stringify(state.exam));
+}
+
+async function openMockExam(testId, fresh = false) {
+  stopSpeakingTask();
+  stopTimer();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
+  state.testId = testId;
+  state.exam = (!fresh && readMockExam(testId)) || {
+    testId, status: "active", started_at: new Date().toISOString(),
+    section: "listening", index: 0, sectionIntro: false,
+    answers: {}, checked: {}, submissions: {}, timings: {}, notes: {},
+  };
+  state.section = state.exam.section;
+  state.index = state.exam.index;
+  state.sectionIntro = false;
+  state.sourceCache.clear();
+  await loadTest();
+  if (state.exam.status === "completed") {
+    showMockResults();
+    if (SECTIONS.some(({ id }) => !state.submissions[id]?.db_attempt_id)) await saveMockResults();
+  }
+}
+
+async function exitMockExam() {
+  if (state.mockSaving || state.submittingSection) return;
+  saveCurrentTiming(false);
+  persist();
+  stopTimer();
+  stopSpeakingTask();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
+  state.exam = null;
+  await showOverview();
+}
+
+async function advanceMockExam() {
+  stopListeningQuestionTimer();
+  const next = SECTIONS.find(({ id }) => !state.submissions[id]);
+  if (!next) {
+    state.exam.status = "completed";
+    state.exam.completed_at = new Date().toISOString();
+    persist();
+    showMockResults();
+    await saveMockResults();
+    return;
+  }
+  state.section = next.id;
+  state.index = 0;
+  state.sectionIntro = false;
+  persist();
+  resetSectionTimer();
+  renderSections();
+  await renderPracticeStep();
+  if (state.section !== "listening" && !state.timer.running) toggleTimer();
+}
+
+function showMockResults() {
+  if (state.exam?.status !== "completed") return;
+  stopTimer();
+  stopSpeakingTask();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
+  setView("mock-results");
+  const params = new URLSearchParams({ view: "mock-results", mode: "mock", test: urlTestId(state.testId) });
+  window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
+  document.title = "CELPIP Mock Exam Results";
+  $("mockResultsTitle").textContent = TESTS.find((test) => test.id === state.testId)?.label || state.testId;
+  const elapsed = SECTIONS.reduce((total, { id }) => total + (state.submissions[id]?.elapsed_seconds || 0), 0);
+  $("mockResultsSummary").textContent = `4 sections completed · ${formatDuration(elapsed)}`;
+  $("mockResultsBody").innerHTML = SECTIONS.map(({ id, label }) => {
+    const result = state.submissions[id];
+    const level = displayLevelForResult(id, result);
+    const score = result.correct === null ? "Awaiting AI assessment" : `${result.correct}/${result.total}`;
+    return `<article class="mock-result-card"><h2>${label}</h2>
+      <strong>${escapeHtml(level ? `Practice Level ${level}` : score)}</strong>
+      ${level && result.correct !== null ? `<p>${escapeHtml(score)}</p>` : ""}
+      <p>Time used: ${formatDuration(result.elapsed_seconds)}</p>
+      <button type="button" data-mock-review="${id}" ${state.mockSaving ? "disabled" : ""}>Review${["writing", "speaking"].includes(id) ? " & grade with AI" : " answers"}</button>
+    </article>`;
+  }).join("");
+  $("mockResultsBody").querySelectorAll("[data-mock-review]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      state.section = button.dataset.mockReview;
+      state.index = 0;
+      state.sectionIntro = false;
+      setView("practice");
+      renderSections();
+      resetSectionTimer();
+      await renderPracticeStep();
+    });
+  });
+  const errors = SECTIONS.filter(({ id }) => state.submissions[id]?.db_error);
+  $("mockResultsNotice").textContent = state.mockSaving ? "Saving all four sections…"
+    : errors.length ? "Results are saved in this browser. Some sections could not sync; retry saving below."
+      : SERVER_API_ENABLED ? "All four sections saved to History. Writing and Speaking can now be graded with AI."
+        : "Results saved in this browser. AI grading is available in the full app.";
+  $("retryMockSaveBtn").hidden = !errors.length || state.mockSaving;
+}
+
+async function saveMockResults() {
+  if (state.mockSaving || state.exam?.status !== "completed") return;
+  state.mockSaving = true;
+  showMockResults();
+  try {
+    for (const { id } of SECTIONS) {
+      if (!state.submissions[id]?.db_attempt_id) await saveSubmissionToDatabase(id);
+    }
+  } finally {
+    state.mockSaving = false;
+    persist();
+    showMockResults();
+  }
 }
 
 const REVIEWS_STORAGE_KEY = "celpip-practice:reviewed-parts-v2";
@@ -172,7 +317,7 @@ async function loadReviews() {
 function renderReviewControl() {
   const button = $("reviewBtn");
   const group = currentGroup();
-  button.hidden = $("practiceView").hidden || !group || $("questionNav").hidden;
+  button.hidden = isMockActive() || $("practiceView").hidden || !group || $("questionNav").hidden;
   button.disabled = Boolean(state.reviewSave || state.reviewsError);
   const reviewed = isGroupReviewed(group);
   button.textContent = state.reviewSave ? "Saving…" : reviewed ? "★ Reviewed" : "☆ Mark reviewed";
@@ -405,7 +550,16 @@ async function init() {
   $("historyBtn").addEventListener("click", showHistory);
   $("timerBtn").addEventListener("click", toggleTimer);
   $("toggleSourceBtn").addEventListener("click", toggleSource);
-  const requestedView = new URLSearchParams(window.location.search).get("view");
+  $("exitMockBtn").addEventListener("click", exitMockExam);
+  $("mockResultsBtn").addEventListener("click", showMockResults);
+  $("retryMockSaveBtn").addEventListener("click", saveMockResults);
+  const params = new URLSearchParams(window.location.search);
+  const mockTestId = testIdFromUrl(params.get("test"));
+  if (params.get("mode") === "mock" && mockTestId) {
+    await openMockExam(mockTestId);
+    return;
+  }
+  const requestedView = params.get("view");
   if (requestedView === "history") {
     await showHistory();
     return;
@@ -427,7 +581,31 @@ async function loadTest() {
   setSidebarCollapsed(true);
   setView("practice");
   const response = await fetch(sourceUrl("questions.json"));
+  if (!response.ok) throw new Error("Could not load this test's questions. Please retry.");
   state.data = await response.json();
+  // Keep groups and section-level responses on the same question objects.
+  state.data.questions_by_key = Object.fromEntries(state.data.questions.map((question) => [question.key, question]));
+  if (state.exam) {
+    state.answers = state.exam.answers;
+    state.checked = state.exam.checked;
+    state.submissions = state.exam.submissions;
+    state.timings = state.exam.timings;
+    state.notes = state.exam.notes;
+    state.listeningUnlocked = new Set(state.exam.listeningUnlocked || []);
+    state.listeningQuestionIndex = new Map(state.exam.listeningQuestionIndex || []);
+    if (SECTIONS.some(({ id }) => !state.data.questions.some((question) => question.section === id))) {
+      throw new Error("A full mock exam needs all four sections in this material pack.");
+    }
+    if (isMockActive() && state.submissions[state.section]) {
+      await advanceMockExam();
+      return;
+    }
+    renderSections();
+    resetSectionTimer();
+    await render();
+    if (isMockActive() && state.section !== "listening" && !state.timer.running) toggleTimer();
+    return;
+  }
   const localDraft = readLocalDraft(state.testId);
   const databaseDraft = await fetchDatabaseDraft(state.testId);
   state.answers = mergeAnswers(databaseDraft?.answers, localDraft.answers);
@@ -492,8 +670,11 @@ function setView(view) {
   $("overviewView").hidden = view !== "overview";
   $("historyView").hidden = view !== "history";
   $("practiceView").hidden = view !== "practice";
-  $("overviewBtn").hidden = view === "overview";
-  $("historyBtn").hidden = view === "history";
+  $("mockResultsView").hidden = view !== "mock-results";
+  $("overviewBtn").hidden = view === "overview" || isMockActive() || state.mockSaving;
+  $("historyBtn").hidden = view === "history" || isMockActive() || state.mockSaving;
+  $("exitMockBtn").hidden = !isMockActive();
+  $("mockResultsBtn").hidden = state.exam?.status !== "completed" || view === "mock-results";
   $("reviewBtn").hidden = true;
 }
 
@@ -522,13 +703,21 @@ function stopPracticePlayback() {
   });
 }
 
+function stopSpeakingTask() {
+  state.practiceCleanup?.();
+  state.practiceCleanup = null;
+}
+
 function stopListeningQuestionTimer() {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   state.listeningQuestionTimer = null;
 }
 
 async function showHistory() {
+  if (isMockActive() || state.mockSaving) return;
+  stopSpeakingTask();
   stopTimer();
+  state.exam = null;
   stopPracticePlayback();
   stopListeningQuestionTimer();
   setView("history");
@@ -573,13 +762,16 @@ async function showHistory() {
 }
 
 async function showOverview() {
+  if (isMockActive() || state.mockSaving) return;
+  stopSpeakingTask();
   stopTimer();
+  state.exam = null;
   stopPracticePlayback();
   stopListeningQuestionTimer();
   setView("overview");
   window.history.replaceState({}, "", `${window.location.pathname}?view=overview`);
   document.title = "CELPIP Practice Overview";
-  $("overviewBody").innerHTML = `<tr><td colspan="5">Loading practice history...</td></tr>`;
+  $("overviewBody").innerHTML = `<tr><td colspan="6">Loading practice history...</td></tr>`;
   $("overviewNotice").textContent = "";
   await loadReviews();
 
@@ -655,7 +847,16 @@ async function showOverview() {
         ${reviewedCount ? `<small class="review-count">${reviewLabel}</small>` : ""}
       </button></td>`;
     }).join("");
-    return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}</tr>`;
+    const mock = readMockExam(test.id);
+    const mockLabel = mock?.status === "active" ? "Resume mock exam" : "Start mock exam";
+    const mockDetail = mock?.status === "active"
+      ? `Continue ${SECTIONS.find(({ id }) => id === mock.section)?.label || "Listening"}`
+      : "Listening → Reading → Writing → Speaking";
+    const mockCell = `<td class="mock-exam-cell">
+      <button class="status-button mock-start" data-mock-test="${test.id}" type="button"><span>${mockLabel}</span><small>${mockDetail}</small></button>
+      ${mock?.status === "completed" ? `<button class="ghost small" data-mock-results="${test.id}" type="button">View last mock results</button>` : ""}
+    </td>`;
+    return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}${mockCell}</tr>`;
   }).join("");
 
   const total = TESTS.length * SECTIONS.length;
@@ -670,9 +871,19 @@ async function showOverview() {
       await loadTest();
     });
   });
+  $("overviewBody").querySelectorAll("[data-mock-test]").forEach((button) => {
+    button.addEventListener("click", () => openMockExam(button.dataset.mockTest, readMockExam(button.dataset.mockTest)?.status !== "active"));
+  });
+  $("overviewBody").querySelectorAll("[data-mock-results]").forEach((button) => {
+    button.addEventListener("click", () => openMockExam(button.dataset.mockResults));
+  });
 }
 
 function persist({ sync = true } = {}) {
+  if (state.exam) {
+    persistMockExam();
+    return;
+  }
   localStorage.setItem(storageKey(), JSON.stringify(state.answers));
   localStorage.setItem(checkedStorageKey(), JSON.stringify(state.checked));
   localStorage.setItem(submissionStorageKey(), JSON.stringify(state.submissions));
@@ -709,6 +920,7 @@ function syncAllLocalDrafts() {
 }
 
 function scheduleDraftSync(testId = state.testId, delay = 600) {
+  if (state.exam?.testId === testId) return;
   if (!SERVER_API_ENABLED) return;
   if (state.draftSyncTimers.has(testId)) {
     window.clearTimeout(state.draftSyncTimers.get(testId));
@@ -723,6 +935,7 @@ function scheduleDraftSync(testId = state.testId, delay = 600) {
 }
 
 async function syncDraftToDatabase(testId = state.testId) {
+  if (state.exam?.testId === testId) return;
   if (!SERVER_API_ENABLED) return;
   const draft = readLocalDraft(testId);
   try {
@@ -742,12 +955,13 @@ async function syncDraftToDatabase(testId = state.testId) {
 function renderSections() {
   $("sectionTabs").innerHTML = SECTIONS.map((section) => {
     const total = state.data.sections?.[section.id] || 0;
-    return `<button class="section-tab ${section.id === state.section ? "active" : ""}" data-section="${section.id}">
+    return `<button class="section-tab ${section.id === state.section ? "active" : ""}" data-section="${section.id}" ${isMockActive() ? "disabled" : ""}>
       ${section.label}<small>${total} tasks</small>
     </button>`;
   }).join("");
   $("sectionTabs").querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (isMockActive()) return;
       stopPracticePlayback();
       stopListeningQuestionTimer();
       stopTimer();
@@ -762,20 +976,25 @@ function renderSections() {
 }
 
 async function render() {
+  stopSpeakingTask();
   stopPracticePlayback();
   const groups = sectionGroups();
   if (!groups.length) return;
   if (state.index >= groups.length) state.index = groups.length - 1;
   const group = currentGroup();
   const submitted = Boolean(state.submissions[state.section]);
+  if (state.section === "writing") await Promise.all(group.questions.map(loadWritingPrompt));
   const showSpeakingIntro = state.section === "speaking" && state.sectionIntro;
   if (state.section === "speaking" && !showSpeakingIntro) {
     const prompts = group.questions.flatMap((question) => [question, previousSpeakingChoiceQuestion(question)]).filter(Boolean);
-    await Promise.all(prompts.map(loadSpeakingChoicePrompt));
+    await Promise.all(prompts.map(loadSpeakingPrompt));
   }
   const showWritingIntro = state.section === "writing" && state.sectionIntro && !submitted;
   const showSectionIntro = showSpeakingIntro || showWritingIntro;
   updatePracticeUrl(group);
+  if (state.exam) persistMockExam();
+  $("mockExamNotice").hidden = !isMockActive();
+  $("mockExamNotice").textContent = `Full mock exam · Section ${SECTIONS.findIndex(({ id }) => id === state.section) + 1} of 4 · ${SECTIONS.find(({ id }) => id === state.section)?.label}. Scores and correct answers appear after all four sections. Progress is saved in this browser.`;
   $("partLabel").textContent = `${TESTS.find((t) => t.id === state.testId).label} · ${state.section}`;
   const displayTitle = displayGroupTitle(group);
   $("questionTitle").textContent = showSectionIntro
@@ -822,9 +1041,9 @@ async function render() {
   const isLastPart = state.index === groups.length - 1;
   const nextSubmits = isLastPart && !submitted && ["reading", "writing"].includes(state.section);
   const unansweredInPart = group.questions.filter((question) => !state.answers[question.key]).length;
-  const readingIncomplete = state.section === "reading" && !submitted && unansweredInPart > 0;
+  const readingIncomplete = state.section === "reading" && !submitted && unansweredInPart > 0 && !isMockActive();
   $("nextBtn").disabled = readingIncomplete || (isLastPart && !nextSubmits);
-  $("nextBtn").textContent = nextSubmits ? "Submit Section" : "Next";
+  $("nextBtn").textContent = nextSubmits ? (isMockActive() ? "Finish section & continue" : "Submit Section") : "Next";
   $("nextBtn").title = readingIncomplete
     ? `Answer ${unansweredInPart} remaining question${unansweredInPart === 1 ? "" : "s"} before continuing.`
     : "";
@@ -872,6 +1091,7 @@ function updatePracticeUrl(group) {
     part: String(state.index + 1),
   });
   if (state.sectionIntro) params.set("intro", "1");
+  if (state.exam) params.set("mode", "mock");
   else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");
   window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
   const testLabel = TESTS.find((test) => test.id === state.testId)?.label || state.testId;
@@ -950,7 +1170,8 @@ function renderStats() {
   const answered = questions.filter((q) => state.answers[q.key]).length;
   const correct = questions.filter((q) => state.checked[q.key] === true).length;
   $("answeredCount").textContent = `${answered}/${questions.length}`;
-  $("scoreCount").textContent = `${correct}`;
+  $("scoreCount").textContent = isMockActive() ? "—" : `${correct}`;
+  $("scoreCount").parentElement.hidden = isMockActive();
 }
 
 function sectionChoiceQuestions() {
@@ -962,7 +1183,7 @@ function renderSectionResult() {
   const result = state.submissions[state.section];
   const questions = currentGroup()?.questions || [];
   const speakingPractice = questions.length > 0 && questions.every(isSpeakingPracticeQuestion);
-  if (!result || speakingPractice) {
+  if (!result || speakingPractice || isMockActive()) {
     box.hidden = true;
     return;
   }
@@ -1128,6 +1349,7 @@ async function startFreshSection(testId, section) {
   const test = TESTS.find((item) => item.id === testId);
   const sectionLabel = SECTIONS.find((item) => item.id === section)?.label || section;
   if (!window.confirm(`Start a new ${sectionLabel} practice for ${test?.label || testId}? Previous submitted attempts will remain in History.`)) return;
+  state.exam = null;
 
   const response = await fetch(materialUrl(testId, "questions.json"));
   const data = await response.json();
@@ -1338,11 +1560,18 @@ function renderListeningQuestionGroup(group, seconds) {
 }
 
 function startListeningQuestionTimer(group, seconds, onExpire = () => advanceListeningQuestion(group)) {
-  let remaining = seconds;
+  const timerKey = `${listeningUnlockKey(group)}:${state.listeningQuestionIndex.get(listeningUnlockKey(group)) || 0}`;
+  let remaining = isMockActive() ? (state.exam.listeningRemaining?.[timerKey] ?? seconds) : seconds;
   const output = $("listeningQuestionTime");
+  if (output) output.textContent = formatDuration(remaining);
   state.listeningQuestionTimer = window.setInterval(() => {
     remaining -= 1;
     if (output) output.textContent = formatDuration(remaining);
+    if (isMockActive()) {
+      state.exam.listeningRemaining ||= {};
+      state.exam.listeningRemaining[timerKey] = Math.max(0, remaining);
+      persist();
+    }
     if (remaining <= 0) onExpire();
   }, 1000);
 }
@@ -1451,6 +1680,7 @@ function renderListeningGate(group, media) {
     state.listeningQuestionIndex.set(key, 0);
     renderPracticeStep();
   });
+  if (isMockActive()) startButton.click();
 }
 
 function renderQuestionCard(q, strictListening = false) {
@@ -1511,11 +1741,11 @@ function renderQuestionCard(q, strictListening = false) {
   const speakingChoiceReview = speakingChoiceStep && Boolean(state.submissions.speaking);
   const speakingPrompt = compactSpeakingComparisonHtml(q, speakingQuestionHtml(q));
   const comparisonLayout = speakingPrompt.includes('class="speaking-comparison-grid"');
-  return `<section class="question-card ${comparisonLayout ? "speaking-comparison-task" : ""}" data-key="${q.key}">
+  const promptMedia = supplementalSpeakingMedia(q, speakingPrompt);
+  return `<section class="question-card speaking-task ${comparisonLayout ? "speaking-comparison-task" : ""}" data-key="${q.key}">
     <h2>${q.number ? `Task ${q.number}` : "Speaking Practice"}</h2>
     ${isSpeakingPracticeQuestion(q) ? "<small>Optional warm-up. This practice task is not graded.</small>" : ""}
-    ${taskMedia}
-    <div class="card-question-text structured-prompt">${speakingPrompt}</div>
+    <div class="card-question-text structured-prompt speaking-prompt">${speakingPrompt}${promptMedia}</div>
     ${comparisonLayout ? "" : speakingChoiceCarryoverHtml(q)}
     ${speakingChoiceStep ? `<section class="speaking-choice-selector" aria-label="${speakingChoiceReview ? "Saved option" : "Choose an option"}">
       <strong>${speakingChoiceReview ? "Choice step — no recording" : "No recording in this step"}</strong>
@@ -1650,26 +1880,72 @@ function structuredQuestionHtml(question) {
   return sanitizeStructuredHtml(question.question_html, sourceFile, true);
 }
 
-async function loadSpeakingChoicePrompt(question) {
-  if (question.section !== "speaking" || Number(question.number) !== 5 || question.question_html) return;
+async function loadSpeakingPrompt(question) {
+  if (question.section !== "speaking" || question.question_html) return;
   const sourceFile = question.source_file || question.source_pages?.[0]?.file;
   if (!sourceFile) return;
   try {
     const response = await fetch(sourceUrl(sourceFile), { cache: "no-store" });
     if (!response.ok) return;
     const doc = new DOMParser().parseFromString(await response.text(), "text/html");
-    const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody']");
+    const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody'], main");
     if (!body) return;
     const fragment = doc.createElement("div");
     for (const child of body.children) {
-      if (/CELPIP (4-5|7-8|10-12) Response/.test(child.textContent)
-        || child.classList.contains("mod-custom") || child.id.startsWith("mod-custom")) break;
+      if (child.matches("[data-rlta-element='container'], .mod-custom, [id^='mod-custom']")
+        || /CELPIP\s+(?:4\s*[-–]\s*5|7\s*[-–]\s*8|10\s*[-–]\s*12)\s+Response/i.test(child.textContent)) break;
       fragment.append(child.cloneNode(true));
     }
-    question.question_html = fragment.innerHTML;
+    fragment.querySelectorAll("[hidden], [role='tabpanel'], textarea, input, button").forEach((node) => node.remove());
+    if (fragment.textContent.trim() || fragment.querySelector("img")) question.question_html = fragment.innerHTML;
   } catch {
     // Keep the text prompt available if its saved source cannot be loaded.
   }
+}
+
+function normalizeSpeakingPrompt(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll("*").forEach((node) => {
+    // Preserve emphasis semantically while discarding source-page typography,
+    // fixed dimensions and large gaps that do not fit the practice workspace.
+    if (node.tagName === "SPAN" && (node.style.fontWeight === "bold" || Number.parseInt(node.style.fontWeight, 10) >= 600)) {
+      const strong = doc.createElement("strong");
+      strong.append(...node.childNodes);
+      node.replaceWith(strong);
+      return;
+    }
+    if (/^(?:Preparation:\s*\d+\s*seconds\s*)?(?:Recording:\s*\d+\s*seconds\s*)?$/i.test(node.textContent.trim())
+      && /Preparation:|Recording:/i.test(node.textContent)
+      && (node.matches("span") || (node.matches("p") && !node.querySelector("span")))) {
+      node.classList.add("speaking-task-timing");
+      if (node.previousSibling?.nodeName === "BR") node.previousSibling.remove();
+    }
+    node.removeAttribute("style");
+    node.removeAttribute("width");
+    node.removeAttribute("height");
+  });
+  doc.body.querySelectorAll("p").forEach((node) => {
+    if (!node.textContent.trim() && !node.querySelector("img, audio, video")) node.remove();
+  });
+  return doc.body.innerHTML;
+}
+
+function speakingPlainTextHtml(question) {
+  const text = (question.question_text || "").replace(/\*?NOTE:\s*This practice test is not recording your response\.?/gi, "");
+  return text.split(/\n+|\s+(?=Choose ONE:|EITHER\b|OR\b|Preparation:|Recording:)/)
+    .filter((paragraph) => paragraph.trim())
+    .map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`).join("");
+}
+
+function supplementalSpeakingMedia(question, html) {
+  if (!question.media?.length) return "";
+  // Compare with the original prompt: Task 5 intentionally removes the
+  // unchosen picture, which must not reappear as supplemental media.
+  const original = question.question_html ? structuredQuestionHtml(question) : html;
+  const doc = new DOMParser().parseFromString(original, "text/html");
+  const embedded = new Set([...doc.querySelectorAll("[src]")].map((node) => node.getAttribute("src")));
+  const media = question.media.filter((item) => !embedded.has(item.path) && !embedded.has(assetUrl(item.path)));
+  return media.length ? `<div class="card-media">${media.map(mediaNode).join("")}</div>` : "";
 }
 
 function previousSpeakingChoiceQuestion(question) {
@@ -1680,7 +1956,9 @@ function previousSpeakingChoiceQuestion(question) {
 }
 
 function speakingQuestionHtml(question) {
-  const html = structuredQuestionHtml(question);
+  const html = question.question_html
+    ? normalizeSpeakingPrompt(structuredQuestionHtml(question))
+    : speakingPlainTextHtml(question);
   const previousQuestion = previousSpeakingChoiceQuestion(question);
   const selectedIndex = previousQuestion ? speakingChoiceIndex(state.answers[previousQuestion.key]) : null;
   if (selectedIndex !== 0 && selectedIndex !== 1) return html;
@@ -1911,7 +2189,9 @@ async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = f
 
 function writingQuestionHtml(question) {
   if (!question.question_html) {
-    return escapeHtml((question.question_text || "").replace(/\s+\d+\s*Minutes\s*$/i, ""));
+    const text = (question.question_text || "").replace(/\s+\d+\s*Minutes\s*$/i, "");
+    return text.split(/\n\s*\n|(?=\b(?:Write an email|Choose the option|Option [AB]:))/)
+      .map((paragraph) => `<p>${escapeHtml(paragraph.trim()).replace(/\n/g, "<br>")}</p>`).join("");
   }
   const template = document.createElement("template");
   template.innerHTML = structuredQuestionHtml(question);
@@ -1919,6 +2199,41 @@ function writingQuestionHtml(question) {
   const lastBlock = blocks[blocks.length - 1];
   if (lastBlock && /^\d+\s*Minutes$/i.test(lastBlock.textContent.trim())) lastBlock.remove();
   return template.innerHTML;
+}
+
+async function loadWritingPrompt(question) {
+  if (question.question_html || question._writingPromptLoaded) return;
+  const sourceFile = question.source_file || question.source_pages?.[0]?.file;
+  if (!sourceFile) return;
+  try {
+    const response = await fetch(sourceUrl(sourceFile), { cache: "no-store" });
+    if (!response.ok) return;
+    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody'], main");
+    if (!body) return;
+    const fragment = doc.createElement("div");
+    // Extract only the task. Saved pages may also contain model responses,
+    // legacy timers and editors; none belong in the prompt during an attempt.
+    for (const child of body.children) {
+      if (child.matches("[data-rlta-element='container'], .mod-custom, [id^='mod-custom']")
+        || /CELPIP\s+(?:4\s*[-–]\s*5|7\s*[-–]\s*8|10\s*[-–]\s*12)\s+Response/i.test(child.textContent)) break;
+      if (/^\d+\s*Minutes$/i.test(child.textContent.trim())) continue;
+      fragment.append(child.cloneNode(true));
+    }
+    fragment.querySelectorAll("[hidden], textarea, input, button, [role='tabpanel']").forEach((node) => node.remove());
+    fragment.querySelectorAll("[style], [width], [height]").forEach((node) => {
+      node.removeAttribute("style");
+      node.removeAttribute("width");
+      node.removeAttribute("height");
+    });
+    fragment.querySelectorAll("p").forEach((node) => {
+      if (!node.textContent.trim() && !node.querySelector("img")) node.remove();
+    });
+    if (fragment.textContent.trim()) question.question_html = fragment.innerHTML;
+    question._writingPromptLoaded = true;
+  } catch {
+    // Keep a readable text prompt when the saved source is unavailable.
+  }
 }
 
 function responseSamplesHtml(question) {
@@ -2049,6 +2364,17 @@ async function bindSpeakingRecorder(card, question) {
   let recordingStarted = false;
   let preparationComplete = false;
   let micSetupPromise = null;
+  let disposed = false;
+  state.practiceCleanup = () => {
+    disposed = true;
+    window.clearInterval(timerId);
+    if (recorder?.state === "recording") recorder.stop();
+    stream?.getTracks().forEach((track) => track.stop());
+  };
+  if (isMockActive() && state.answers[question.key]) {
+    window.setTimeout(() => { if (!disposed) advanceSpeakingTask(); }, 0);
+    return;
+  }
 
   const showRecordingIndicator = (active) => {
     recorderPanel?.classList.toggle("is-recording", active);
@@ -2067,6 +2393,10 @@ async function bindSpeakingRecorder(card, question) {
     if (!micSetupPromise) {
       micSetupPromise = (async () => {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (disposed) {
+          stream.getTracks().forEach((track) => track.stop());
+          throw new Error("Task closed");
+        }
         const preferredType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
           .find((type) => MediaRecorder.isTypeSupported(type));
         recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
@@ -2077,6 +2407,7 @@ async function bindSpeakingRecorder(card, question) {
           window.clearInterval(timerId);
           showRecordingIndicator(false);
           stream?.getTracks().forEach((track) => track.stop());
+          if (disposed) return;
           const duration = Math.max(1, (Date.now() - startedAt) / 1000);
           const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
           status.textContent = "Saving recording...";
@@ -2128,7 +2459,7 @@ async function bindSpeakingRecorder(card, question) {
   };
 
   const startSpeakingTask = () => {
-    if (started || (!choiceStep && state.answers[question.key]) || state.submissions.speaking) return;
+    if (disposed || !card.isConnected || started || (!choiceStep && state.answers[question.key]) || state.submissions.speaking) return;
     started = true;
     try {
       chunks = [];
@@ -2286,7 +2617,10 @@ async function uploadSpeakingRecording(question, blob, duration, status, playbac
     playback.hidden = true;
     status.textContent = "Response recorded and saved. Continue to the next task.";
     renderStats();
-    window.setTimeout(advanceSpeakingTask, 800);
+    const exam = state.exam;
+    window.setTimeout(() => {
+      if (state.exam === exam && currentGroup()?.questions.some((item) => item.key === question.key)) advanceSpeakingTask();
+    }, 800);
   } catch (error) {
     status.textContent = `Recorded for this page, but local save failed: ${error.message}`;
   }
@@ -2377,13 +2711,19 @@ async function submitSection() {
         level: null,
         elapsed_seconds: state.timer.elapsed,
         note: state.section === "writing"
-          ? "Writing saved. Requesting an AI practice assessment using CELPIP criteria."
+          ? isMockActive()
+            ? "Writing saved. Select Grade with AI after completing the full mock exam."
+            : "Writing saved. Requesting an AI practice assessment using CELPIP criteria."
           : state.section === "speaking"
             ? "Speaking saved. Select Grade with AI to receive a practice assessment using CELPIP criteria."
             : "This section has been saved locally.",
         submitted_at: new Date().toISOString(),
       };
       persist();
+      if (isMockActive()) {
+        await advanceMockExam();
+        return;
+      }
       if (state.section === "writing") renderFeedback(null, "Writing submitted. AI grading may take up to a minute.");
       if (state.section === "speaking") renderFeedback(null, "Speaking saved. Select Grade with AI when you are ready for scores.");
       await saveSubmissionToDatabase();
@@ -2420,6 +2760,10 @@ async function submitSection() {
       submitted_at: new Date().toISOString(),
     };
     persist();
+    if (isMockActive()) {
+      await advanceMockExam();
+      return;
+    }
     await saveSubmissionToDatabase();
     await renderPracticeStep();
   } finally {
@@ -2427,8 +2771,8 @@ async function submitSection() {
   }
 }
 
-async function saveSubmissionToDatabase() {
-  const submission = state.submissions[state.section];
+async function saveSubmissionToDatabase(section = state.section) {
+  const submission = state.submissions[section];
   if (!submission) return;
   if (!SERVER_API_ENABLED) {
     delete submission.db_error;
@@ -2438,7 +2782,7 @@ async function saveSubmissionToDatabase() {
     return;
   }
 
-  const payload = buildSubmissionPayload(submission);
+  const payload = buildSubmissionPayload(submission, section);
   try {
     const response = await fetch("/api/submissions", {
       method: "POST",
@@ -2474,8 +2818,8 @@ async function saveSubmissionToDatabase() {
   persist();
 }
 
-function buildSubmissionPayload(submission) {
-  const questions = sectionQuestions();
+function buildSubmissionPayload(submission, section = state.section) {
+  const questions = state.data.questions.filter((question) => question.section === section);
   const responses = questions.map((question) => {
     const answerValue = state.answers[question.key] ?? null;
     const selectedOption = question.options?.find((option) => option.id === answerValue || option.value === answerValue);
@@ -2493,7 +2837,8 @@ function buildSubmissionPayload(submission) {
 
   return {
     test_id: state.testId,
-    section: state.section,
+    section,
+    defer_assessment: Boolean(state.exam),
     total_questions: questions.length,
     answered_count: questions.filter((question) => state.answers[question.key]).length,
     correct_count: submission.correct,
@@ -2652,11 +2997,12 @@ async function handleTimerExpired() {
 }
 
 function stopTimer() {
+  const wasRunning = state.timer.running;
   if (state.timer.id) window.clearInterval(state.timer.id);
   state.timer.id = null;
   state.timer.running = false;
   $("timerBtn").textContent = "▶";
-  saveCurrentTiming(true);
+  if (wasRunning) saveCurrentTiming(true);
 }
 
 function updateTimer() {
@@ -2695,6 +3041,10 @@ function saveCurrentTiming(sync) {
         },
       },
     };
+    if (state.exam) {
+      persistMockExam();
+      return;
+    }
     localStorage.setItem(timingStorageKey(), JSON.stringify(state.timings));
     if (sync) scheduleDraftSync(state.testId, 0);
     return;
@@ -2703,6 +3053,10 @@ function saveCurrentTiming(sync) {
     elapsed_seconds: state.timer.elapsed,
     remaining_seconds: state.timer.remaining,
   };
+  if (state.exam) {
+    persistMockExam();
+    return;
+  }
   localStorage.setItem(timingStorageKey(), JSON.stringify(state.timings));
   if (sync) scheduleDraftSync(state.testId, 0);
 }

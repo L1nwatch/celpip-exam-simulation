@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CELPIP Practice Lab</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261031-1">
 </head>
 <body>
   <header class="topbar">
@@ -16,6 +16,8 @@
       </div>
     </div>
     <div class="top-actions">
+      <button id="exitMockBtn" class="ghost" type="button" hidden>Save &amp; exit</button>
+      <button id="mockResultsBtn" class="ghost" type="button" hidden>Mock exam results</button>
       <button id="reviewBtn" class="ghost review-button" type="button" aria-pressed="false" hidden>☆ Mark reviewed</button>
       <button id="overviewBtn" class="ghost" type="button">Overview</button>
       <button id="historyBtn" class="ghost" type="button">History</button>
@@ -39,6 +41,7 @@
             <th>Reading</th>
             <th>Writing</th>
             <th>Speaking</th>
+            <th>Full mock exam</th>
           </tr>
         </thead>
         <tbody id="overviewBody"></tbody>
@@ -72,6 +75,19 @@
       </table>
     </div>
     <p id="historyNotice" class="overview-notice"></p>
+  </main>
+
+  <main id="mockResultsView" class="overview-view" hidden>
+    <div class="overview-head">
+      <div>
+        <p class="eyebrow">Full mock exam completed</p>
+        <h1 id="mockResultsTitle">Your results</h1>
+      </div>
+      <div id="mockResultsSummary" class="overview-summary"></div>
+    </div>
+    <div id="mockResultsBody" class="mock-results-grid"></div>
+    <p id="mockResultsNotice" class="overview-notice" role="status"></p>
+    <button id="retryMockSaveBtn" type="button" hidden>Retry saving results</button>
   </main>
 
   <main id="practiceView" class="shell sidebar-collapsed" hidden>
@@ -111,6 +127,7 @@
       </div>
 
       <p id="reviewNotice" class="review-notice" role="status" hidden></p>
+      <p id="mockExamNotice" class="mock-exam-notice" role="status" hidden></p>
       <div class="practice-grid">
         <article class="source-panel">
           <div class="panel-head">
@@ -135,6 +152,6 @@
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261031-1"></script>
 </body>
 </html>

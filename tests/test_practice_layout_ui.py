@@ -361,6 +361,52 @@ class PracticeLayoutUiTests(unittest.TestCase):
         self.assertLess(layout["panel"]["width"], layout["grid"]["width"])
         self.assertFalse(layout["overflow"])
 
+    def test_other_speaking_tasks_keep_scene_and_timer_readable_at_all_widths(self):
+        image = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200"%3E%3Crect width="1800" height="1200" fill="lightblue"/%3E%3C/svg%3E'
+        error = self.driver.execute_async_script("""
+            const [image, done] = arguments;
+            state.section = 'speaking'; state.sectionIntro = false; state.index = 0;
+            const question = {key: 'scene', section: 'speaking', number: 3, question_type: 'speaking_task',
+                source_file: 'pages/scene.html', media: [{type: 'image', path: image}],
+                question_html: `<div style="min-height: 900px; width: 1800px">
+                    <p><span style="font-size: 28px; font-weight: bold">Describe the scene below and explain what the people are doing.</span></p>
+                    <p>Include details about the setting and the people. Explain how they might be feeling and what they could do next.</p>
+                    <img src='${image}' style="width: 1800px; height: 1200px; margin-top: 100px">
+                    <p>*NOTE: This practice test is not recording your response.</p></div>`};
+            state.data = {questions: [question]};
+            state.submissions = {speaking: {submitted_at: '2026-10-25'}};
+            render().then(() => done(null)).catch(e => done(e.message));
+        """, image)
+        self.assertIsNone(error)
+        for width in (390, 768, 1366, 1920):
+            self.set_viewport(width, 900)
+            self.wait_for_scene_image()
+            result = self.driver.execute_script("""
+                const prompt = document.querySelector('.speaking-prompt');
+                const image = prompt.querySelector('img').getBoundingClientRect();
+                const recorder = document.querySelector('.speaking-recorder').getBoundingClientRect();
+                return {images: prompt.querySelectorAll('img').length, imageHeight: image.height,
+                    recorderBottom: recorder.bottom, imageTop: image.top, viewportHeight: innerHeight,
+                    styles: prompt.querySelectorAll('[style], [width], [height]').length,
+                    overflow: document.documentElement.scrollWidth > innerWidth};
+            """)
+            with self.subTest(width=width):
+                self.assertEqual(1, result['images'])
+                self.assertEqual(0, result['styles'])
+                self.assertFalse(result['overflow'])
+                self.assertLessEqual(result['imageHeight'], result['viewportHeight'] * .48 + 1)
+                self.assertLess(result['recorderBottom'], result['imageTop'])
+        self.driver.execute_script("document.querySelector('.question-panel').scrollTop = 200")
+        self.assertTrue(self.driver.execute_script("""
+            const recorder = document.querySelector('.speaking-recorder').getBoundingClientRect();
+            const panel = document.querySelector('.question-panel').getBoundingClientRect();
+            return recorder.top >= panel.top && recorder.bottom < panel.bottom;
+        """))
+
+    def wait_for_scene_image(self):
+        WebDriverWait(self.driver, 5).until(lambda d: d.execute_script(
+            "const image = document.querySelector('.speaking-prompt img'); return image.complete && image.naturalWidth > 0"))
+
 
 if __name__ == "__main__":
     unittest.main()

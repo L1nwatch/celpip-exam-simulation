@@ -541,6 +541,18 @@ class ServerPersistenceTests(unittest.TestCase):
         save_mock.assert_called_once_with({"section": "speaking"})
         assessment_mock.assert_not_called()
 
+    def test_mock_writing_defers_ai_but_practice_keeps_automatic_assessment(self):
+        with (
+            mock.patch.object(server, "save_submission", return_value={"attempt_id": 42}),
+            mock.patch.object(server, "request_writing_assessment", return_value={"overall_level": 8}) as grade,
+        ):
+            result = server.save_submission_for_api({"section": "writing", "defer_assessment": True})
+            self.assertEqual({"attempt_id": 42}, result)
+            grade.assert_not_called()
+            practice = server.save_submission_for_api({"section": "writing"})
+            self.assertEqual(8, practice["writing_assessment"]["overall_level"])
+            grade.assert_called_once_with(42)
+
     def test_handler_blocks_legacy_output_static_routes(self):
         handler = server.Handler.__new__(server.Handler)
         handler.path = "/output/local_celpip1_test1/questions.json"

@@ -2,6 +2,14 @@
 
 A local CELPIP-style practice app for Listening, Reading, Writing, and Speaking. It renders material packs, saves drafts in browser localStorage, syncs attempts to SQLite, stores speaking recordings as files, and shows practice history.
 
+Choose **Start mock exam** beside a test to complete Listening → Reading → Writing → Speaking in one session. Sections advance automatically, with independent Reading/Writing timers and automatic Speaking preparation and recording. Scores, correct answers and review controls stay hidden until all four sections are finished. The final results page saves each section to History and provides Writing/Speaking AI grading.
+
+Mock exam progress is separate from single-section practice and is saved in the current browser. Refresh to continue, or use **Save & exit** and **Resume mock exam** on the overview. Previously completed practice does not pre-fill a new mock exam. If a result cannot sync, it stays in the browser and can be retried from the final results page.
+
+Writing prompts recover paragraphs and bullet points from saved source pages when imported question data contains only plain text. Model responses and old source-page editors remain excluded from the task prompt.
+
+Speaking prompts also recover the original paragraphs, line breaks, options and pictures for every task type. Source-page fonts and large empty gaps are normalized, pictures appear alongside their instructions without duplication, and the preparation/recording controls stay visible while scrolling.
+
 No official CELPIP content is included. Public demo content is fake; real or licensed practice material must stay local.
 
 Use **☆ Mark reviewed** in the top-right corner of a practice part to mark it as reviewed. Click **★ Reviewed** to undo. The overview shows a star and the number of reviewed parts for each test section, and test navigation marks the individual parts. Review marks are saved to SQLite across browsers independently of answers and scores; the public demo saves them in the current browser only.

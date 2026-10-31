@@ -890,6 +890,32 @@ h1 {
   line-height: 1.5;
 }
 
+.mock-exam-notice {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #b8cfeb;
+  border-radius: 10px;
+  background: #eef5ff;
+  line-height: 1.6;
+}
+
+.mock-exam-cell { min-width: 210px; }
+.mock-exam-cell > .ghost { margin-top: 8px; }
+.mock-start { border-color: #8caed6; }
+.mock-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 20px;
+}
+.mock-result-card {
+  padding: 24px;
+  border: 1px solid #d8e2ed;
+  border-radius: 14px;
+  background: #fff;
+}
+.mock-result-card h2 { margin-top: 0; }
+.section-tab:disabled { cursor: default; }
+
 .structured-prompt img {
   max-width: 100%;
   height: auto;
@@ -1146,6 +1172,68 @@ textarea {
   border-radius: 8px;
   background: #f8fafc;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.speaking-task {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.speaking-task > h2 {
+  order: -3;
+  margin: 0;
+}
+
+.speaking-task > small { order: -2; }
+
+.speaking-task > .speaking-recorder {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  order: -1;
+  margin: 0;
+  box-shadow: 0 3px 10px rgb(26 39 58 / 8%);
+}
+
+.speaking-prompt {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.speaking-task:not(.speaking-comparison-task) .speaking-prompt p {
+  max-width: 90ch;
+}
+
+.speaking-prompt .speaking-task-timing {
+  display: block;
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.speaking-prompt img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(48vh, 480px);
+  height: auto;
+  margin: 16px auto;
+  object-fit: contain;
+}
+
+.speaking-prompt table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.speaking-prompt td {
+  padding: 10px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 /* Keep Task 5's two options and live timer in the same working area. */

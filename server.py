@@ -880,9 +880,9 @@ def request_speaking_assessment(attempt_id):
 
 
 def save_submission_for_api(payload):
-    """Save immediately; only Writing keeps its automatic assessment flow."""
+    """Save immediately; mock exams request assessment separately after completion."""
     result = save_submission(payload)
-    if payload.get("section") == "writing":
+    if payload.get("section") == "writing" and payload.get("defer_assessment") is not True:
         try:
             result["writing_assessment"] = request_writing_assessment(result["attempt_id"])
         except Exception as exc:

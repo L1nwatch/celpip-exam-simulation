@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -69,9 +70,9 @@ class StaticWebUiTests(unittest.TestCase):
             with self.subTest(html=str(html_path)):
                 parser = parse_html(html_path)
                 for script in parser.scripts:
-                    self.assertTrue((html_path.parent / script).exists(), script)
+                    self.assertTrue((html_path.parent / urlsplit(script).path).exists(), script)
                 for stylesheet in parser.stylesheets:
-                    self.assertTrue((html_path.parent / stylesheet).exists(), stylesheet)
+                    self.assertTrue((html_path.parent / urlsplit(stylesheet).path).exists(), stylesheet)
 
     def test_core_views_and_controls_are_present(self):
         parser = parse_html(ROOT / "webapp" / "index.html")
@@ -79,6 +80,10 @@ class StaticWebUiTests(unittest.TestCase):
             "overviewView",
             "historyView",
             "practiceView",
+            "mockResultsView",
+            "mockExamNotice",
+            "exitMockBtn",
+            "mockResultsBtn",
             "overviewBtn",
             "reviewBtn",
             "reviewNotice",
@@ -95,7 +100,7 @@ class StaticWebUiTests(unittest.TestCase):
             "nextBtn",
         }
         self.assertTrue(required_ids.issubset(parser.ids))
-        self.assertEqual({"overviewView", "historyView", "practiceView"}, parser.mains)
+        self.assertEqual({"overviewView", "historyView", "practiceView", "mockResultsView"}, parser.mains)
         self.assertIn("Sections", parser.aria_labels)
         self.assertIn("Question list", parser.aria_labels)
 
