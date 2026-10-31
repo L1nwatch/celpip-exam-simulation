@@ -257,6 +257,18 @@ class PracticeLayoutUiTests(unittest.TestCase):
         self.assertLess(layout['recorder']['bottom'], min(card['top'] for card in layout['options']))
         self.assertFalse(layout['overflow'])
 
+    def test_task5_long_options_fit_with_wider_system_fonts(self):
+        self.set_viewport(1366, 768)
+        for font in ('Arial, sans-serif', 'Verdana, sans-serif'):
+            self.driver.execute_script('document.body.style.fontFamily = arguments[0]', font)
+            for choice_step, review in ((True, False), (False, False), (False, True)):
+                self.render_comparison(choice_step, review, long_text=True)
+                self.driver.execute_script('setSidebarCollapsed(false)')
+                WebDriverWait(self.driver, 3).until(lambda d: d.execute_script(
+                    "return !document.getElementById('practiceView').getAnimations().length"))
+                with self.subTest(font=font, choice_step=choice_step, review=review):
+                    self.assert_live_comparison_visible()
+
     def run_live_comparison(self, selected=None):
         PreviewHandler.recordings.clear()
         self.set_viewport(1366, 768)

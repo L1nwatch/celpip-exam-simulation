@@ -1389,6 +1389,35 @@ textarea {
   padding: 10px 12px;
 }
 
+@media (min-width: 1041px) and (max-height: 850px) {
+  .speaking-comparison-task {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .speaking-comparison-task .structured-prompt > p {
+    margin-bottom: 6px;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .speaking-comparison-grid { gap: 10px; }
+  .speaking-option-card { padding: 8px; }
+  .structured-prompt .speaking-option-label { margin-bottom: 4px; }
+  .speaking-option-title { font-size: 15px; }
+
+  .speaking-option-content {
+    grid-template-columns: minmax(80px, .25fr) minmax(0, .75fr);
+    gap: 10px;
+  }
+
+  .speaking-option-content li {
+    margin: 3px 0;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+}
+
 @media (max-width: 580px) {
   .speaking-comparison-grid {
     grid-template-columns: 1fr;
