@@ -900,7 +900,6 @@ h1 {
 }
 
 .mock-exam-cell { min-width: 210px; }
-.mock-exam-cell > .ghost { margin-top: 8px; }
 .mock-start { border-color: #8caed6; }
 .mock-results-grid {
   display: grid;

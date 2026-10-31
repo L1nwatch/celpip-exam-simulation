@@ -171,6 +171,7 @@ class MockExamUiTests(unittest.TestCase):
         for section in ('listening', 'reading', 'writing', 'speaking'):
             self.driver.find_element('id', 'overviewBtn').click()
             self.wait(lambda d: d.find_elements('css selector', f'[data-section="{section}"].completed'))
+            self.assertFalse(self.driver.find_elements('css selector', '[data-mock-results]'))
             self.driver.find_element('css selector', f'[data-test="{TEST_ID}"][data-section="{section}"]').click()
             self.section(section)
             self.wait(lambda d: d.execute_script('return !!state.attemptReview && !!document.querySelector(".question-card")'))

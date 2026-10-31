@@ -951,7 +951,6 @@ async function showOverview() {
       : "Listening → Reading → Writing → Speaking";
     const mockCell = `<td class="mock-exam-cell">
       <button class="status-button mock-start" data-mock-test="${test.id}" type="button"><span>${mockLabel}</span><small>${mockDetail}</small></button>
-      ${mock?.status === "completed" ? `<button class="ghost small" data-mock-results="${test.id}" type="button">View last mock results</button>` : ""}
     </td>`;
     return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}${mockCell}</tr>`;
   }).join("");
@@ -969,9 +968,6 @@ async function showOverview() {
   });
   $("overviewBody").querySelectorAll("[data-mock-test]").forEach((button) => {
     button.addEventListener("click", () => openMockExam(button.dataset.mockTest, readMockExam(button.dataset.mockTest)?.status !== "active"));
-  });
-  $("overviewBody").querySelectorAll("[data-mock-results]").forEach((button) => {
-    button.addEventListener("click", () => openMockExam(button.dataset.mockResults));
   });
 }
 
