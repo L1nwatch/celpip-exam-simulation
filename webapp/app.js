@@ -81,6 +81,7 @@ const state = {
   sectionIntro: false,
   submittingSection: false,
   exam: null,
+  attemptReview: null,
   mockSaving: false,
   practiceCleanup: null,
   timer: {
@@ -143,26 +144,86 @@ function persistMockExam() {
   localStorage.setItem(mockStorageKey(), JSON.stringify(state.exam));
 }
 
-async function openMockExam(testId, fresh = false) {
+async function openMockExam(testId, fresh = false, reviewSection = null, reviewPart = 0) {
   stopSpeakingTask();
   stopTimer();
   stopPracticePlayback();
   stopListeningQuestionTimer();
+  state.attemptReview = null;
   state.testId = testId;
   state.exam = (!fresh && readMockExam(testId)) || {
     testId, status: "active", started_at: new Date().toISOString(),
     section: "listening", index: 0, sectionIntro: false,
     answers: {}, checked: {}, submissions: {}, timings: {}, notes: {},
   };
-  state.section = state.exam.section;
-  state.index = state.exam.index;
+  state.section = state.exam.status === "completed" && reviewSection ? reviewSection : state.exam.section;
+  state.index = reviewSection ? Math.max(0, Number(reviewPart) || 0) : state.exam.index;
   state.sectionIntro = false;
   state.sourceCache.clear();
   await loadTest();
-  if (state.exam.status === "completed") {
+  if (state.exam.status === "completed" && !reviewSection) {
     showMockResults();
     if (SECTIONS.some(({ id }) => !state.submissions[id]?.db_attempt_id)) await saveMockResults();
   }
+}
+
+function latestResult(...results) {
+  const timestamp = (result) => Date.parse(result.submitted_at || result.created_at || "") || 0;
+  return results.filter(Boolean).reduce((latest, result) => !latest
+    || timestamp(result) > timestamp(latest)
+    ? result : latest, null);
+}
+
+async function openSavedAttempt(attemptId, partIndex = 0) {
+  const response = await fetch(`/api/submissions?attempt_id=${encodeURIComponent(attemptId)}`);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Could not load the saved attempt.");
+  const attempt = result.attempt;
+  if (!TESTS.some((test) => test.id === attempt.test_id) || !SECTIONS.some(({ id }) => id === attempt.section)) {
+    throw new Error("This saved attempt does not belong to an available test.");
+  }
+  stopSpeakingTask();
+  stopTimer();
+  stopPracticePlayback();
+  stopListeningQuestionTimer();
+  state.exam = null;
+  state.attemptReview = attempt;
+  state.testId = attempt.test_id;
+  state.section = attempt.section;
+  state.index = Math.max(0, Number(partIndex) || 0);
+  state.sectionIntro = false;
+  state.sourceCache.clear();
+  await loadTest();
+}
+
+async function openSection(testId, section, attemptId, reviewSource = "") {
+  if (attemptId === undefined && SERVER_API_ENABLED) {
+    const response = await fetch("/api/submissions");
+    if (response.ok) {
+      const attempts = (await response.json()).attempts || [];
+      attemptId = attempts.find((attempt) => attempt.test_id === testId && attempt.section === section)?.id;
+    }
+  }
+  const mock = readMockExam(testId);
+  if (attemptId) {
+    try {
+      return await openSavedAttempt(attemptId);
+    } catch (error) {
+      if (mock?.status !== "completed" || String(mock.submissions[section]?.db_attempt_id) !== String(attemptId)) throw error;
+      return openMockExam(testId, false, section);
+    }
+  }
+  if (mock?.status === "completed" && mock.submissions[section] && reviewSource !== "practice") {
+    return openMockExam(testId, false, section);
+  }
+  state.attemptReview = null;
+  state.exam = null;
+  state.testId = testId;
+  state.section = section;
+  state.index = 0;
+  state.sectionIntro = isIntroSection(section);
+  state.sourceCache.clear();
+  await loadTest();
 }
 
 async function exitMockExam() {
@@ -556,7 +617,12 @@ async function init() {
   const params = new URLSearchParams(window.location.search);
   const mockTestId = testIdFromUrl(params.get("test"));
   if (params.get("mode") === "mock" && mockTestId) {
-    await openMockExam(mockTestId);
+    const reviewSection = params.get("view") === "mock-review" ? params.get("section") : null;
+    await openMockExam(mockTestId, false, reviewSection, Number(params.get("part") || 1) - 1);
+    return;
+  }
+  if (params.has("attempt")) {
+    await openSavedAttempt(params.get("attempt"), Number(params.get("part") || 1) - 1);
     return;
   }
   const requestedView = params.get("view");
@@ -585,6 +651,26 @@ async function loadTest() {
   state.data = await response.json();
   // Keep groups and section-level responses on the same question objects.
   state.data.questions_by_key = Object.fromEntries(state.data.questions.map((question) => [question.key, question]));
+  if (state.attemptReview) {
+    const attempt = state.attemptReview;
+    state.answers = Object.fromEntries(attempt.responses.map((response) => [response.question_key, response.answer_value]));
+    state.checked = Object.fromEntries(attempt.responses.filter((response) => response.is_correct !== null)
+      .map((response) => [response.question_key, response.is_correct]));
+    state.submissions = { [attempt.section]: {
+      total: attempt.total_questions, correct: attempt.correct_count, level: attempt.estimated_level,
+      elapsed_seconds: attempt.elapsed_seconds, note: attempt.note, submitted_at: attempt.submitted_at,
+      db_attempt_id: attempt.id, db_created_at: attempt.created_at,
+      writing_assessment: attempt.writing_assessment, speaking_assessment: attempt.speaking_assessment,
+    } };
+    state.timings = {};
+    const draft = await fetchDatabaseDraft(state.testId);
+    state.notes = { ...(draft?.notes || {}), ...readLocalDraft(state.testId).notes };
+    await loadReviews();
+    renderSections();
+    resetSectionTimer();
+    await renderPracticeStep();
+    return;
+  }
   if (state.exam) {
     state.answers = state.exam.answers;
     state.checked = state.exam.checked;
@@ -613,6 +699,7 @@ async function loadTest() {
   state.submissions = mergeSubmissions(databaseDraft?.submissions, localDraft.submissions);
   state.timings = { ...(databaseDraft?.timings || {}), ...localDraft.timings };
   state.notes = { ...(databaseDraft?.notes || {}), ...localDraft.notes };
+  if (state.submissions[state.section]) state.sectionIntro = false;
   await loadReviews();
   await restoreListeningReviewFromHistory();
   persist({ sync: false });
@@ -718,6 +805,7 @@ async function showHistory() {
   stopSpeakingTask();
   stopTimer();
   state.exam = null;
+  state.attemptReview = null;
   stopPracticePlayback();
   stopListeningQuestionTimer();
   setView("history");
@@ -751,10 +839,14 @@ async function showHistory() {
         <td>${escapeHtml(attempt.raw_score || "Saved")}</td>
         <td>${escapeHtml(attempt.estimated_level || "—")}</td>
         <td>${attempt.elapsed_seconds === null || attempt.elapsed_seconds === undefined ? "—" : formatDuration(attempt.elapsed_seconds)}</td>
-        <td><button class="small practice-again" data-test="${attempt.test_id}" data-section="${attempt.section}" type="button">Practice Again</button></td>
+        <td><button class="small review-attempt" data-attempt="${attempt.id}" type="button">Review</button>
+          <button class="small practice-again" data-test="${attempt.test_id}" data-section="${attempt.section}" type="button">Practice Again</button></td>
       </tr>`;
     }).join("");
     bindPracticeAgainButtons($("historyBody"));
+    $("historyBody").querySelectorAll("[data-attempt]").forEach((button) => {
+      button.addEventListener("click", () => openSavedAttempt(button.dataset.attempt));
+    });
   } catch (error) {
     $("historyBody").innerHTML = `<tr><td colspan="7">Could not load history.</td></tr>`;
     $("historyNotice").textContent = error.message;
@@ -766,6 +858,7 @@ async function showOverview() {
   stopSpeakingTask();
   stopTimer();
   state.exam = null;
+  state.attemptReview = null;
   stopPracticePlayback();
   stopListeningQuestionTimer();
   setView("overview");
@@ -805,6 +898,7 @@ async function showOverview() {
   let completed = 0;
   let inProgress = 0;
   $("overviewBody").innerHTML = TESTS.map((test) => {
+    const mock = readMockExam(test.id);
     const localDraft = readLocalDraft(test.id);
     const databaseDraft = databaseDrafts.get(test.id) || { answers: {}, checked: {}, submissions: {} };
     const draft = {
@@ -814,7 +908,10 @@ async function showOverview() {
     };
     const cells = SECTIONS.map((section) => {
       const attempt = latest.get(`${test.id}:${section.id}`);
-      const localSubmission = draft.submissions[section.id];
+      const mockSubmission = mock?.status === "completed" ? mock.submissions[section.id] : null;
+      const practiceSubmission = draft.submissions[section.id];
+      const localSubmission = latestResult(practiceSubmission, mockSubmission);
+      const result = latestResult(attempt, localSubmission);
       const answered = Object.entries(draft.answers)
         .filter(([key, value]) => key.includes(`_${section.id}_`) && Boolean(value)).length;
       let status = "not-started";
@@ -825,9 +922,7 @@ async function showOverview() {
         completed += 1;
         status = "completed";
         label = "Completed";
-        const result = attempt || localSubmission;
-        const level = displayLevelForResult(section.id, attempt)
-          || displayLevelForResult(section.id, localSubmission);
+        const level = displayLevelForResult(section.id, result);
         detail = level
           ? `Level ${level}`
           : result.raw_score || (result.correct !== null && result.correct !== undefined ? `${result.correct}/${result.total}` : "Submitted");
@@ -841,13 +936,15 @@ async function showOverview() {
       const reviewedCount = Object.values(state.reviews)
         .filter((review) => review.test_id === test.id && review.section === section.id).length;
       const reviewLabel = `${reviewedCount} part${reviewedCount === 1 ? "" : "s"} reviewed`;
-      return `<td><button class="status-button ${status} ${reviewedCount ? "has-reviews" : ""}" data-test="${test.id}" data-section="${section.id}" type="button">
+      const attemptId = result?.id || result?.db_attempt_id || "";
+      const reviewSource = result && result === mockSubmission ? "mock" : "practice";
+      return `<td><button class="status-button ${status} ${reviewedCount ? "has-reviews" : ""}" data-test="${test.id}" data-section="${section.id}" data-attempt="${attemptId}" data-review-source="${reviewSource}" type="button"
+        title="${result ? "Review saved results" : "Open practice"}">
         ${reviewedCount ? `<span class="review-star" aria-hidden="true">★</span>` : ""}
         <span>${label}</span><small>${escapeHtml(detail)}</small>
         ${reviewedCount ? `<small class="review-count">${reviewLabel}</small>` : ""}
       </button></td>`;
     }).join("");
-    const mock = readMockExam(test.id);
     const mockLabel = mock?.status === "active" ? "Resume mock exam" : "Start mock exam";
     const mockDetail = mock?.status === "active"
       ? `Continue ${SECTIONS.find(({ id }) => id === mock.section)?.label || "Listening"}`
@@ -863,12 +960,11 @@ async function showOverview() {
   $("overviewSummary").textContent = `${completed} completed · ${inProgress} in progress · ${total - completed - inProgress} not started`;
   $("overviewBody").querySelectorAll("button[data-test]").forEach((button) => {
     button.addEventListener("click", async () => {
-      state.testId = button.dataset.test;
-      state.section = button.dataset.section;
-      state.index = 0;
-      state.sectionIntro = isIntroSection(state.section);
-      state.sourceCache.clear();
-      await loadTest();
+      try {
+        await openSection(button.dataset.test, button.dataset.section, button.dataset.attempt || null, button.dataset.reviewSource);
+      } catch (error) {
+        $("overviewNotice").textContent = error.message;
+      }
     });
   });
   $("overviewBody").querySelectorAll("[data-mock-test]").forEach((button) => {
@@ -880,6 +976,7 @@ async function showOverview() {
 }
 
 function persist({ sync = true } = {}) {
+  if (state.attemptReview) return;
   if (state.exam) {
     persistMockExam();
     return;
@@ -920,6 +1017,7 @@ function syncAllLocalDrafts() {
 }
 
 function scheduleDraftSync(testId = state.testId, delay = 600) {
+  if (state.attemptReview?.test_id === testId) return;
   if (state.exam?.testId === testId) return;
   if (!SERVER_API_ENABLED) return;
   if (state.draftSyncTimers.has(testId)) {
@@ -935,6 +1033,7 @@ function scheduleDraftSync(testId = state.testId, delay = 600) {
 }
 
 async function syncDraftToDatabase(testId = state.testId) {
+  if (state.attemptReview?.test_id === testId) return;
   if (state.exam?.testId === testId) return;
   if (!SERVER_API_ENABLED) return;
   const draft = readLocalDraft(testId);
@@ -962,6 +1061,7 @@ function renderSections() {
   $("sectionTabs").querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", async () => {
       if (isMockActive()) return;
+      if (state.attemptReview) return openSection(state.testId, button.dataset.section);
       stopPracticePlayback();
       stopListeningQuestionTimer();
       stopTimer();
@@ -1092,6 +1192,8 @@ function updatePracticeUrl(group) {
   });
   if (state.sectionIntro) params.set("intro", "1");
   if (state.exam) params.set("mode", "mock");
+  if (state.exam?.status === "completed") params.set("view", "mock-review");
+  if (state.attemptReview) params.set("attempt", String(state.attemptReview.id));
   else if (state.section === "writing" && !state.submissions[state.section]) params.set("intro", "0");
   window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
   const testLabel = TESTS.find((test) => test.id === state.testId)?.label || state.testId;
@@ -1350,6 +1452,7 @@ async function startFreshSection(testId, section) {
   const sectionLabel = SECTIONS.find((item) => item.id === section)?.label || section;
   if (!window.confirm(`Start a new ${sectionLabel} practice for ${test?.label || testId}? Previous submitted attempts will remain in History.`)) return;
   state.exam = null;
+  state.attemptReview = null;
 
   const response = await fetch(materialUrl(testId, "questions.json"));
   const data = await response.json();
@@ -1788,6 +1891,32 @@ function reviewNoteHtml(question) {
     </label>
     <small class="review-note-status">Saved automatically</small>
   </div>`;
+}
+
+function saveAttemptReviewNote(questionKey, value, status) {
+  const testId = state.testId;
+  const notes = JSON.parse(localStorage.getItem(notesStorageKey(testId)) || "{}");
+  notes[questionKey] = value;
+  localStorage.setItem(notesStorageKey(testId), JSON.stringify(notes));
+  if (!SERVER_API_ENABLED) {
+    if (status) status.textContent = "Saved automatically";
+    return;
+  }
+  const key = `review-notes:${testId}:${questionKey}`;
+  window.clearTimeout(state.draftSyncTimers.get(key));
+  state.draftSyncTimers.set(key, window.setTimeout(async () => {
+    state.draftSyncTimers.delete(key);
+    try {
+      const response = await fetch("/api/drafts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test_id: testId, notes_only: true, notes: { [questionKey]: value } }),
+      });
+      if (!response.ok) throw new Error("Could not sync note");
+      if (status) status.textContent = "Saved automatically";
+    } catch {
+      if (status) status.textContent = "Saved in this browser; server sync failed.";
+    }
+  }, 600));
 }
 
 function writingAssessmentHtml(question) {
@@ -2299,6 +2428,10 @@ function bindQuestionCard(q) {
     reviewNote.addEventListener("input", () => {
       state.notes[q.key] = reviewNote.value;
       if (status) status.textContent = "Saving...";
+      if (state.attemptReview) {
+        saveAttemptReviewNote(q.key, reviewNote.value, status);
+        return;
+      }
       persist();
       window.clearTimeout(savedTimer);
       savedTimer = window.setTimeout(() => {
@@ -2511,10 +2644,16 @@ async function bindSpeakingRecorder(card, question) {
     const recordings = response.ok ? (await response.json()).recordings || [] : [];
     if (recordings.length) {
       if (state.submissions.speaking) {
-        playbackUi.show(recordings[0]);
+        const recordingId = /^recording:(\d+)$/.exec(String(state.answers[question.key] || ""))?.[1];
+        const recording = recordingId ? recordings.find((item) => String(item.id) === recordingId) : recordings[0];
+        if (!recording) {
+          status.textContent = "The recording for this saved response is unavailable.";
+          return;
+        }
+        playbackUi.show(recording);
         recordButton.hidden = true;
-        status.textContent = `Recorded response saved ${new Date(recordings[0].created_at).toLocaleString()}.`;
-        time.textContent = formatDuration(recordings[0].duration_seconds || 0);
+        status.textContent = `Recorded response saved ${new Date(recording.created_at).toLocaleString()}.`;
+        time.textContent = formatDuration(recording.duration_seconds || 0);
       } else if (state.answers[question.key]) {
         recordButton.disabled = true;
         status.textContent = "Response recorded. Continue to the next task.";

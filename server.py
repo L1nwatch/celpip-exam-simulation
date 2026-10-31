@@ -10,7 +10,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -372,6 +372,33 @@ def recent_attempts():
         attempt["responses"] = responses_by_attempt.get(row["id"], [])
         attempts.append(attempt)
     return attempts
+
+
+def saved_attempt(attempt_id):
+    if not str(attempt_id).isdigit() or int(attempt_id) <= 0:
+        raise ValueError("attempt_id must be a positive integer")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM attempts WHERE id = ?", (int(attempt_id),)).fetchone()
+        if row is None:
+            return None
+        attempt = dict(row)
+        responses = conn.execute(
+            "SELECT question_key, answer_value, is_correct FROM responses WHERE attempt_id = ? ORDER BY question_number, id",
+            (int(attempt_id),),
+        ).fetchall()
+        attempt["responses"] = [
+            {**dict(response), "is_correct": None if response["is_correct"] is None else bool(response["is_correct"])}
+            for response in responses
+        ]
+        for section, table in (("writing", "writing_assessments"), ("speaking", "speaking_assessments")):
+            if attempt["section"] == section:
+                assessment = conn.execute(
+                    f"SELECT assessment_json FROM {table} WHERE attempt_id = ?", (int(attempt_id),)
+                ).fetchone()
+                if assessment:
+                    attempt[f"{section}_assessment"] = json.loads(assessment["assessment_json"])
+    return attempt
 
 
 def openai_api_key():
@@ -929,6 +956,10 @@ def saved_reviews():
 
 
 def save_draft(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Draft must be an object")
+    if payload.get("notes_only") is True:
+        return save_review_notes(payload)
     required = ["test_id", "answers", "checked", "submissions"]
     missing = [key for key in required if key not in payload]
     if missing:
@@ -966,6 +997,30 @@ def save_draft(payload):
         conn.commit()
 
     return {"test_id": test_id, "updated_at": updated_at}
+
+
+def save_review_notes(payload):
+    test_id = payload.get("test_id")
+    notes = payload.get("notes")
+    if not isinstance(test_id, str) or not test_id:
+        raise ValueError("test_id must be a non-empty string")
+    if not isinstance(notes, dict) or any(not isinstance(value, str) for value in notes.values()):
+        raise ValueError("notes must be an object containing text values")
+    now = utc_now()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT notes_json FROM drafts WHERE test_id = ?", (test_id,)).fetchone()
+        merged = json.loads(row[0] or "{}") if row else {}
+        merged.update(notes)
+        conn.execute(
+            """
+            INSERT INTO drafts (test_id, answers_json, checked_json, submissions_json, notes_json, updated_at, created_at)
+            VALUES (?, '{}', '{}', '{}', ?, ?, ?)
+            ON CONFLICT(test_id) DO UPDATE SET notes_json=excluded.notes_json
+            """,
+            (test_id, json.dumps(merged, ensure_ascii=False), now, now),
+        )
+    return {"test_id": test_id, "updated_at": now}
 
 
 def saved_drafts():
@@ -1188,6 +1243,15 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_error(HTTPStatus.NOT_FOUND, "Media was not found")
             return
         if parsed.path == "/api/submissions":
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            if "attempt_id" in params:
+                try:
+                    attempt = saved_attempt(params["attempt_id"][0])
+                    self.send_json(HTTPStatus.OK if attempt else HTTPStatus.NOT_FOUND,
+                                   {"attempt": attempt} if attempt else {"error": "Saved attempt was not found"})
+                except ValueError as exc:
+                    self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
             self.send_json(HTTPStatus.OK, {"attempts": recent_attempts()})
             return
         if parsed.path == "/api/drafts":
@@ -1197,8 +1261,6 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(HTTPStatus.OK, {"reviews": saved_reviews()})
             return
         if parsed.path == "/api/recordings":
-            from urllib.parse import parse_qs
-
             params = parse_qs(parsed.query)
             test_id = (params.get("test_id") or [""])[0]
             question_key = (params.get("question_key") or [""])[0]

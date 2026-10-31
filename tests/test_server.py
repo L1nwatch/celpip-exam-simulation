@@ -234,6 +234,77 @@ class ServerPersistenceTests(unittest.TestCase):
         self.assertEqual(1, draft["submissions"]["listening"]["correct"])
         self.assertEqual(submission["attempt_id"], draft["submissions"]["listening"]["db_attempt_id"])
 
+    def test_saved_attempt_details_cover_all_sections_without_creating_drafts(self):
+        for section in ('listening', 'reading', 'writing', 'speaking'):
+            with self.subTest(section=section):
+                result = server.save_submission({
+                    'test_id': 'local_celpip1_test1', 'section': section, 'total_questions': 2,
+                    'answered_count': 1, 'correct_count': 1 if section in ('listening', 'reading') else None,
+                    'responses': [
+                        {'question_key': section + '_q1', 'answer_value': 'recording:12' if section == 'speaking' else 'Saved response', 'is_correct': True},
+                        {'question_key': section + '_q2', 'answer_value': None, 'is_correct': False},
+                    ],
+                })
+                attempt = server.saved_attempt(result['attempt_id'])
+                self.assertEqual(section, attempt['section'])
+                self.assertEqual(result['attempt_id'], attempt['id'])
+                self.assertEqual(2, len(attempt['responses']))
+                self.assertIsNone(attempt['responses'][1]['answer_value'])
+                self.assertFalse(attempt['responses'][1]['is_correct'])
+        self.assertEqual([], server.saved_drafts())
+        self.assertEqual(4, len(server.recent_attempts()))
+
+    def test_saved_attempt_returns_persisted_ai_assessment(self):
+        for section in ('writing', 'speaking'):
+            result = server.save_submission({
+                'test_id': 'local_celpip1_test1', 'section': section, 'total_questions': 1,
+                'answered_count': 1, 'responses': [{'question_key': 'q1', 'answer_value': 'Saved response'}],
+            })
+            assessment = {'overall_level': 8, 'summary': 'Saved feedback', 'task_assessments': []}
+            with server.sqlite3.connect(self.db_path) as conn:
+                if section == 'writing':
+                    conn.execute('INSERT INTO writing_assessments (attempt_id, model, overall_level, assessment_json, created_at) VALUES (?, ?, ?, ?, ?)',
+                                 (result['attempt_id'], 'fixture', 8, json.dumps(assessment), '2026-10-31'))
+                else:
+                    conn.execute('INSERT INTO speaking_assessments (attempt_id, model, transcription_model, overall_level, assessment_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                                 (result['attempt_id'], 'fixture', 'fixture', 8, json.dumps(assessment), '2026-10-31'))
+            self.assertEqual(assessment, server.saved_attempt(result['attempt_id'])[section + '_assessment'])
+
+    def test_saved_attempt_http_validates_id_and_missing_attempt(self):
+        handler = server.Handler.__new__(server.Handler)
+        handler.send_json = mock.Mock()
+        for value in ('', '0', '-1', 'abc', '1%20OR%201=1'):
+            handler.path = '/api/submissions?attempt_id=' + value
+            handler.do_GET()
+            self.assertEqual(HTTPStatus.BAD_REQUEST, handler.send_json.call_args.args[0])
+        handler.path = '/api/submissions?attempt_id=999'
+        handler.do_GET()
+        self.assertEqual(HTTPStatus.NOT_FOUND, handler.send_json.call_args.args[0])
+        result = server.save_submission({'test_id': 'local_celpip1_test1', 'section': 'reading',
+                                         'total_questions': 1, 'answered_count': 0, 'responses': []})
+        handler.path = '/api/submissions?attempt_id=' + str(result['attempt_id'])
+        handler.do_GET()
+        status, payload = handler.send_json.call_args.args
+        self.assertEqual(HTTPStatus.OK, status)
+        self.assertEqual(result['attempt_id'], payload['attempt']['id'])
+
+    def test_review_note_updates_preserve_draft_answers_resets_and_timing(self):
+        draft = {'test_id': 'local_celpip1_test1', 'answers': {'q1': 'Unfinished response'},
+                 'checked': {}, 'submissions': {'writing': None}, 'timings': {'writing': {'remaining_seconds': 123}},
+                 'notes': {'other': 'Keep this note'}, 'updated_at': '2026-10-31T10:00:00Z'}
+        server.save_draft(draft)
+        server.save_draft({'test_id': draft['test_id'], 'notes_only': True, 'notes': {'q1': 'New review note'}})
+        saved = server.saved_drafts()[0]
+        for field in ('answers', 'checked', 'submissions', 'timings', 'updated_at'):
+            self.assertEqual(draft[field], saved[field])
+        self.assertEqual({'other': 'Keep this note', 'q1': 'New review note'}, saved['notes'])
+        server.save_draft({'test_id': 'local_celpip2_test1', 'notes_only': True, 'notes': {'q2': 'A note without an existing draft'}})
+        other = next(d for d in server.saved_drafts() if d['test_id'] == 'local_celpip2_test1')
+        self.assertEqual({}, other['answers'])
+        for notes in (None, [], {'q1': 1}):
+            with self.assertRaises(ValueError):
+                server.save_draft({'test_id': draft['test_id'], 'notes_only': True, 'notes': notes})
+
     def test_saved_draft_respects_explicit_listening_reset(self):
         server.save_submission(
             {

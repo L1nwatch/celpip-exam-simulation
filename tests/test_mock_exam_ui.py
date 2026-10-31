@@ -8,7 +8,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -25,15 +25,30 @@ class MockHandler(PreviewHandler):
     submissions = []
     drafts = []
     fail_section = None
+    attempts = {}
+    saved_drafts = {}
+    history_unavailable = False
+    playback_recordings = {}
 
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/submissions":
-            self.send_json(200, {"attempts": []})
+            if self.history_unavailable:
+                self.send_json(503, {"error": "History temporarily unavailable"})
+                return
+            attempt_id = parse_qs(urlparse(self.path).query).get('attempt_id', [None])[0]
+            if attempt_id:
+                attempt = self.attempts.get(int(attempt_id))
+                self.send_json(200 if attempt else 404, {"attempt": attempt} if attempt else {"error": "Not found"})
+            else:
+                self.send_json(200, {"attempts": list(reversed(list(self.attempts.values())))})
         elif path == "/api/drafts":
-            self.send_json(200, {"drafts": []})
+            self.send_json(200, {"drafts": list(self.saved_drafts.values())})
         elif path == "/api/reviews":
             self.send_json(200, {"reviews": []})
+        elif path == "/api/recordings" and self.playback_recordings:
+            key = parse_qs(urlparse(self.path).query).get('question_key', [''])[0]
+            self.send_json(200, {"recordings": self.playback_recordings.get(key, [])})
         else:
             super().do_GET()
 
@@ -45,11 +60,19 @@ class MockHandler(PreviewHandler):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if path == "/api/drafts":
             self.drafts.append(payload)
+            if payload.get('notes_only'):
+                draft = self.saved_drafts.setdefault(payload['test_id'], {'test_id': payload['test_id']})
+                draft.setdefault('notes', {}).update(payload['notes'])
+            else:
+                self.saved_drafts[payload['test_id']] = payload
             self.send_json(200, {"ok": True})
         elif payload["section"] == self.fail_section:
             self.send_json(503, {"error": "Temporary storage failure"})
         else:
             self.submissions.append(payload)
+            self.attempts[len(self.submissions)] = {
+                **payload, 'id': len(self.submissions), 'created_at': '2026-10-31T18:00:00Z',
+            }
             self.send_json(201, {"attempt_id": len(self.submissions), "created_at": "2026-10-25"})
 
 
@@ -87,6 +110,10 @@ class MockExamUiTests(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
+        MockHandler.attempts.clear()
+        MockHandler.saved_drafts.clear()
+        MockHandler.playback_recordings.clear()
+        MockHandler.history_unavailable = False
         self.url = f"http://127.0.0.1:{self.server.server_port}/webapp/index.html"
         self.driver.get(self.url + "?view=overview")
         self.driver.execute_script("localStorage.clear()")
@@ -124,6 +151,100 @@ class MockExamUiTests(unittest.TestCase):
         self.assertEqual([], MockHandler.submissions)
         self.assertEqual([], MockHandler.drafts)
 
+    def complete_mock(self):
+        self.start()
+        self.call("""
+            state.data.questions.forEach((q, index) => {
+                state.answers[q.key] = q.question_type === 'multiple_choice_single' ? q.options[0].id
+                    : q.section === 'writing' ? 'My submitted mock exam essay.' : `recording:${index + 1}`;
+            });
+            persist();
+            for (let index = 0; index < 4; index += 1) await submitSection();
+        """)
+        self.wait(lambda d: d.find_element('id', 'mockResultsView').is_displayed() and d.execute_script('return !state.mockSaving'))
+
+    def test_completed_overview_sections_open_saved_results_without_overwriting_practice(self):
+        self.driver.execute_script("""
+            localStorage.setItem('celpip-practice:local_celpip1_test1', '{"celpip1_test1_writing_demo_writing_email":"Keep my unfinished essay"}');
+        """)
+        self.complete_mock()
+        for section in ('listening', 'reading', 'writing', 'speaking'):
+            self.driver.find_element('id', 'overviewBtn').click()
+            self.wait(lambda d: d.find_elements('css selector', f'[data-section="{section}"].completed'))
+            self.driver.find_element('css selector', f'[data-test="{TEST_ID}"][data-section="{section}"]').click()
+            self.section(section)
+            self.wait(lambda d: d.execute_script('return !!state.attemptReview && !!document.querySelector(".question-card")'))
+            self.assertFalse(self.driver.find_elements('css selector', '.section-start-panel'))
+            self.assertFalse(self.driver.execute_script('return state.timer.running'))
+            self.assertIn('attempt=', self.driver.current_url)
+            if section == 'writing':
+                textarea = self.driver.find_element('css selector', '.long-response')
+                self.assertEqual('My submitted mock exam essay.', textarea.get_attribute('value'))
+                self.assertTrue(textarea.get_attribute('readonly'))
+            elif section in ('listening', 'reading'):
+                self.assertTrue(all(el.get_attribute('disabled') for el in self.driver.find_elements('css selector', '.option input')))
+                self.assertTrue(self.driver.find_elements('css selector', '.inline-feedback'))
+            self.driver.refresh()
+            self.section(section)
+            self.wait(lambda d: d.execute_script('return !!state.attemptReview && !!document.querySelector(".question-card")'))
+        self.assertEqual({'celpip1_test1_writing_demo_writing_email': 'Keep my unfinished essay'}, json.loads(self.driver.execute_script(
+            "return localStorage.getItem('celpip-practice:local_celpip1_test1')")))
+        self.assertEqual([], MockHandler.drafts)
+        self.assertEqual(4, len(MockHandler.submissions))
+
+    def test_new_browser_and_history_review_exact_attempt_and_recording(self):
+        self.complete_mock()
+        self.driver.execute_script('localStorage.clear()')
+        self.driver.get(self.url + '?view=overview')
+        self.wait(lambda d: d.find_elements('css selector', '[data-section="writing"].completed'))
+        self.driver.find_element('css selector', f'[data-test="{TEST_ID}"][data-section="writing"]').click()
+        self.section('writing')
+        self.wait(lambda d: d.execute_script("return document.querySelector('.long-response')?.value === 'My submitted mock exam essay.'"))
+        speaking = MockHandler.attempts[4]
+        question = speaking['responses'][1]
+        recording_id = int(question['answer_value'].split(':')[1])
+        MockHandler.playback_recordings[question['question_key']] = [
+            {'id': recording_id + 100, 'url': '/newer-recording.webm', 'created_at': '2026-10-31', 'duration_seconds': 60},
+            {'id': recording_id, 'url': '/saved-recording.webm', 'created_at': '2026-10-30', 'duration_seconds': 50},
+        ]
+        self.driver.find_element('id', 'historyBtn').click()
+        self.wait(lambda d: d.find_elements('css selector', '.review-attempt[data-attempt="4"]'))
+        self.driver.find_element('css selector', '.review-attempt[data-attempt="4"]').click()
+        self.section('speaking')
+        self.driver.find_element('id', 'nextBtn').click()
+        self.wait(lambda d: d.execute_script("return document.querySelector('.recorded-playback')?.getAttribute('src') === '/saved-recording.webm'"))
+        self.assertFalse(self.driver.execute_script('return state.timer.running'))
+        self.assertEqual([], MockHandler.drafts)
+
+    def test_review_notes_preserve_in_progress_drafts(self):
+        self.complete_mock()
+        original = {'test_id': TEST_ID, 'answers': {'unfinished': 'Keep my response'}, 'checked': {},
+                    'submissions': {'writing': None}, 'timings': {'writing': {'remaining_seconds': 123}},
+                    'notes': {'other': 'Keep this note'}, 'updated_at': '2026-10-31T10:00:00Z'}
+        MockHandler.saved_drafts[TEST_ID] = json.loads(json.dumps(original))
+        self.driver.get(self.url + '?attempt=3')
+        self.wait(lambda d: d.find_elements('css selector', '.review-note-input'))
+        self.driver.find_element('css selector', '.review-note-input').send_keys('My review note')
+        self.wait(lambda d: any(draft.get('notes_only') for draft in MockHandler.drafts))
+        for field in ('answers', 'checked', 'submissions', 'timings', 'updated_at'):
+            self.assertEqual(original[field], MockHandler.saved_drafts[TEST_ID][field])
+        self.assertEqual('Keep this note', MockHandler.saved_drafts[TEST_ID]['notes']['other'])
+        self.assertEqual(4, len(MockHandler.submissions))
+
+    def test_browser_mock_results_still_open_when_history_is_offline(self):
+        self.complete_mock()
+        MockHandler.history_unavailable = True
+        self.driver.find_element('id', 'overviewBtn').click()
+        self.wait(lambda d: d.find_elements('css selector', '[data-section="writing"].completed'))
+        self.driver.find_element('css selector', f'[data-test="{TEST_ID}"][data-section="writing"]').click()
+        self.section('writing')
+        self.wait(lambda d: d.execute_script("return document.querySelector('.long-response')?.value === 'My submitted mock exam essay.'"))
+        self.assertTrue(self.driver.find_element('css selector', '.long-response').get_attribute('readonly'))
+        self.assertFalse(self.driver.find_elements('css selector', '.section-start-panel'))
+        self.driver.refresh()
+        self.section('writing')
+        self.wait(lambda d: d.execute_script("return document.querySelector('.long-response')?.readOnly === true"))
+
     def test_full_exam_auto_transitions_records_and_reveals_results_only_at_end(self):
         practice = {"answer": "preserve me"}
         self.driver.execute_script("""
@@ -132,6 +253,10 @@ class MockExamUiTests(unittest.TestCase):
             localStorage.setItem('celpip-practice:local_celpip1_test1:submissions', '{"listening":{"correct":38}}');
         """, json.dumps(practice))
         self.start()
+        self.wait(lambda d: d.find_elements('id', 'nextListeningQuestion') or d.execute_script(
+            "return document.getElementById('passageStatus')?.textContent.includes('Playback could not start')"))
+        if not self.driver.find_elements('id', 'nextListeningQuestion'):
+            self.driver.find_element('id', 'startPassageBtn').click()
         self.wait(lambda d: d.find_elements("id", "nextListeningQuestion"))
         for index in range(2):
             self.driver.find_element("css selector", ".option input").click()

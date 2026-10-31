@@ -187,7 +187,7 @@ class StaticWebUiTests(unittest.TestCase):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function hasOfficialScoreTotal", app_js)
         self.assertIn("function displayLevelForResult", app_js)
-        self.assertIn("const level = displayLevelForResult(section.id, attempt)", app_js)
+        self.assertIn("const level = displayLevelForResult(section.id, result)", app_js)
         self.assertIn("estimateLevel(state.section, correct, choiceQuestions.length)", app_js)
         self.assertIn('level: level?.level || null', app_js)
         self.assertIn('"Practice Score"', app_js)
@@ -197,7 +197,7 @@ class StaticWebUiTests(unittest.TestCase):
     def test_overview_shows_saved_ai_levels_for_writing_and_speaking(self):
         app_js = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         self.assertIn('if (["writing", "speaking"].includes(section)) return storedLevel;', app_js)
-        self.assertIn('|| displayLevelForResult(section.id, localSubmission);', app_js)
+        self.assertIn('const result = latestResult(attempt, localSubmission);', app_js)
         self.assertIn('? `Level ${level}`', app_js)
 
     def test_results_do_not_show_internal_sqlite_attempt_ids(self):

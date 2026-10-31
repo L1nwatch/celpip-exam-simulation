@@ -6,6 +6,8 @@ Choose **Start mock exam** beside a test to complete Listening → Reading → W
 
 Mock exam progress is separate from single-section practice and is saved in the current browser. Refresh to continue, or use **Save & exit** and **Resume mock exam** on the overview. Previously completed practice does not pre-fill a new mock exam. If a result cannot sync, it stays in the browser and can be retried from the final results page.
 
+After submission, click a completed section on the overview to review its latest saved attempt, including mock exam responses. History also has a **Review** action for each individual attempt. Saved review links survive refreshes and work across browsers; review shows the original answers, feedback and matching speaking recordings without starting a timer or replacing an unfinished practice draft. Use **Practice Again** explicitly to start over.
+
 Writing prompts recover paragraphs and bullet points from saved source pages when imported question data contains only plain text. Model responses and old source-page editors remain excluded from the task prompt.
 
 Speaking prompts also recover the original paragraphs, line breaks, options and pictures for every task type. Source-page fonts and large empty gaps are normalized, pictures appear alongside their instructions without duplication, and the preparation/recording controls stay visible while scrolling.
