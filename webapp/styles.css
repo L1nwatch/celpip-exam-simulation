@@ -942,6 +942,62 @@ h1 {
   gap: 10px;
 }
 
+.reading-passage {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfcfe;
+}
+
+.reading-question { min-width: 0; }
+
+.reading-passage-instruction {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.reading-passage-body,
+.reading-question-stem {
+  line-height: 2.2;
+  overflow-wrap: anywhere;
+}
+
+.reading-passage-body p {
+  margin: 0 0 16px;
+}
+
+.reading-select {
+  display: inline-block;
+  field-sizing: content;
+  width: auto;
+  min-width: min(9rem, 100%);
+  max-width: 100%;
+  margin: 2px 3px;
+  padding: 4px 28px 4px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background-color: #fff;
+  color: var(--ink);
+  font: inherit;
+  vertical-align: baseline;
+}
+
+.reading-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reading-select:disabled {
+  opacity: 1;
+  color: var(--ink);
+}
+
+.reading-select.correct { border-color: var(--good); }
+.reading-select.wrong { border-color: var(--bad); }
+.reading-paragraph-choice { min-width: 5rem; }
+
 .option {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);

@@ -1083,6 +1083,7 @@ async function render() {
   if (state.index >= groups.length) state.index = groups.length - 1;
   const group = currentGroup();
   const submitted = Boolean(state.submissions[state.section]);
+  const readingLayout = state.section === "reading" ? await loadReadingLayout(group) : null;
   if (state.section === "writing") await Promise.all(group.questions.map(loadWritingPrompt));
   const showSpeakingIntro = state.section === "speaking" && state.sectionIntro;
   if (state.section === "speaking" && !showSpeakingIntro) {
@@ -1112,7 +1113,7 @@ async function render() {
   $("mediaArea").className = "media-area";
   if (showSpeakingIntro) renderSpeakingIntro(groups);
   else if (showWritingIntro) renderWritingIntro(groups);
-  else renderQuestionSet(group, group.media || []);
+  else renderQuestionSet(group, group.media || [], readingLayout);
   const sourcePanel = document.querySelector(".source-panel");
   const sourceContextKey = `${state.testId}:${state.section}:${state.index}:${submitted ? "review" : "attempt"}`;
   if (state.sourceContextKey !== sourceContextKey) {
@@ -1127,7 +1128,10 @@ async function render() {
   practiceGrid.classList.toggle("question-only", hideSource);
   practiceGrid.classList.toggle("speaking-layout", state.section === "speaking");
   $("sourcePanelTitle").textContent = state.section === "listening" ? "Transcript" : "Source";
-  if (!hideSource) await renderSource(group, state.section === "listening" && submitted);
+  if (!hideSource) {
+    if (readingLayout) $("sourceContent").innerHTML = readingLayout.sourceHtml;
+    else await renderSource(group, state.section === "listening" && submitted);
+  }
   const speakingComplete = state.section === "speaking"
     && sectionQuestions().length > 0
     && sectionQuestions().every((question) => state.answers[question.key]);
@@ -1212,7 +1216,12 @@ function routeSectionIntro(section, params) {
 
 function partInstruction(group) {
   if (state.section === "listening") return "Listen to the passage, then answer the questions in this part.";
-  if (state.section === "reading") return "Read the source material, then answer the questions in this part.";
+  if (state.section === "reading") {
+    if (readingGroupOrder(group) === 2) {
+      return "Choose the paragraph (A–D) that contains the information in each statement. Select E if the information is not given in any paragraph.";
+    }
+    return "Read the source on the left. Select the best answer from each drop-down menu, including the blanks inside the message.";
+  }
   return "";
 }
 
@@ -1607,7 +1616,11 @@ function renderWritingIntro(groups) {
   bindPracticeAgainButtons($("answerArea"));
 }
 
-function renderQuestionSet(group, partMedia = []) {
+function renderQuestionSet(group, partMedia = [], readingLayout = null) {
+  if (state.section === "reading") {
+    renderReadingQuestionSet(group, readingLayout);
+    return;
+  }
   const listeningLocked = state.section === "listening"
     && !state.submissions[state.section]
     && !state.listeningUnlocked.has(listeningUnlockKey(group));
@@ -1823,6 +1836,186 @@ function renderListeningGate(group, media) {
   if (isMockActive()) startButton.click();
 }
 
+function readingBlankPattern() {
+  return /(\d{1,2})\s*[.)．]?\s*_{2,}/g;
+}
+
+function readingBlankNumbers(element) {
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const numbers = [];
+  while (walker.nextNode()) {
+    numbers.push(...Array.from(walker.currentNode.textContent.matchAll(readingBlankPattern()), (match) => Number(match[1])));
+  }
+  return numbers;
+}
+
+function numberReadingPassage(element, group) {
+  const part = readingGroupOrder(group);
+  const first = part === 0 ? 7 : part === 1 ? 1 : part === 3 ? 6 : null;
+  if (first === null) return;
+  const expected = group.questions.filter((question) => Number(question.number) >= first && Number(question.number) < first + 5);
+  const pattern = /(?:\b(\d{1,2})\s*[.)．]?\s*)?_{2,}/g;
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const blanks = nodes.flatMap((node) => Array.from(node.textContent.matchAll(pattern)));
+  if (expected.length !== 5 || blanks.length !== expected.length
+    || blanks.some((blank, index) => blank[1] && Number(blank[1]) !== Number(expected[index].number))) return;
+  let index = 0;
+  nodes.forEach((node) => {
+    node.textContent = node.textContent.replace(pattern, () => `${expected[index++].number}. __________`);
+  });
+}
+
+function readingLayoutFromHtml(html, group) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const source = doc.querySelector(".reading-left") || doc.body;
+  source.querySelectorAll(".reading-right, .aq-ic-wrapper, .pagenavigation, footer, input, select, textarea, button")
+    .forEach((node) => node.remove());
+  const questions = new Map(group.questions
+    .filter((question) => question.question_type === "multiple_choice_single")
+    .map((question) => [Number(question.number), question]));
+  const passages = [];
+  let candidates = Array.from(source.querySelectorAll(".reading-answer, .hidden-article"))
+    .map((element) => ({element, sourceNodes: [element]}));
+  // Diagram emails may use one hidden-article element or several ordinary paragraphs.
+  if (readingGroupOrder(group) === 1 && source.querySelector("img")) {
+    const email = doc.createElement("div");
+    const emailNodes = Array.from(source.childNodes).filter((node) =>
+      node.nodeType !== Node.ELEMENT_NODE || !node.matches(".reading2-img, img") && !node.querySelector("img"));
+    emailNodes.forEach((node) => email.append(node.cloneNode(true)));
+    candidates = [{element: email, sourceNodes: emailNodes}];
+  }
+  candidates.forEach(({element: candidate, sourceNodes}) => {
+    numberReadingPassage(candidate, group);
+    const numbers = readingBlankNumbers(candidate);
+    if (numbers.length < 2 || new Set(numbers).size !== numbers.length
+      || numbers.some((number) => !questions.has(number))) return;
+    const heading = candidate.previousElementSibling;
+    const hasHeading = heading?.matches("h2, h3") && /response|comment|blank/i.test(heading.textContent);
+    const instruction = hasHeading ? heading.textContent.trim()
+      : "Complete the message. Select the best choice for each blank.";
+    const passage = candidate.cloneNode(true);
+    passage.removeAttribute("hidden");
+    passage.removeAttribute("class");
+    passage.querySelectorAll("[hidden]").forEach((node) => node.removeAttribute("hidden"));
+    passages.push({html: passage.innerHTML, keys: numbers.map((number) => questions.get(number).key), instruction});
+    if (hasHeading) heading.remove();
+    sourceNodes.forEach((node) => node.remove());
+  });
+  return {sourceHtml: source.innerHTML, passages};
+}
+
+async function loadReadingLayout(group) {
+  const page = group.source_file || group.page;
+  if (!page) return null;
+  const cacheKey = `${state.testId}:${page}:reading-layout`;
+  if (!state.sourceCache.has(cacheKey)) {
+    try {
+      const response = await fetch(sourceUrl(page), {cache: "no-store"});
+      if (!response.ok) return null;
+      const html = extractArticle(await response.text(), page);
+      state.sourceCache.set(cacheKey, readingLayoutFromHtml(html, group));
+    } catch {
+      return null;
+    }
+  }
+  return state.sourceCache.get(cacheKey);
+}
+
+function readingSelectHtml(question) {
+  const submitted = Boolean(state.submissions.reading);
+  const saved = state.answers[question.key];
+  const checked = state.checked[question.key];
+  const selected = question.options.find((option) => saved === option.id || saved === option.value);
+  const grade = submitted && checked !== undefined ? checked ? "correct" : "wrong" : "";
+  const paragraphChoice = question.options.every((option) => /^[A-E]$/.test((option.text || "").trim()));
+  return `<select class="reading-select ${paragraphChoice ? "reading-paragraph-choice" : ""} ${grade}"
+    data-reading-key="${escapeHtml(question.key)}" aria-label="Question ${questionNumber(question)}"
+    ${selected ? `title="${escapeHtml(selected.text)}"` : ""}
+    ${grade === "wrong" ? 'aria-invalid="true"' : ""} ${submitted ? "disabled" : ""}>
+    <option value="">${questionNumber(question)}. Select...</option>
+    ${question.options.map((option) => `<option value="${escapeHtml(option.id)}"
+      ${selected === option ? "selected" : ""}>${escapeHtml(option.text || option.label)}</option>`).join("")}
+  </select>`;
+}
+
+function fillReadingPassage(html, questions) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const byNumber = new Map(questions.map((question) => [Number(question.number), question]));
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    const matches = Array.from(node.textContent.matchAll(readingBlankPattern()));
+    if (!matches.length) return;
+    const fragment = doc.createDocumentFragment();
+    let offset = 0;
+    matches.forEach((match) => {
+      const question = byNumber.get(Number(match[1]));
+      if (!question) return;
+      fragment.append(node.textContent.slice(offset, match.index));
+      const blank = doc.createElement("span");
+      blank.className = "reading-blank";
+      blank.innerHTML = readingSelectHtml(question);
+      fragment.append(blank);
+      offset = match.index + match[0].length;
+    });
+    fragment.append(node.textContent.slice(offset));
+    node.replaceWith(fragment);
+  });
+  return doc.body.innerHTML;
+}
+
+function renderReadingQuestion(question) {
+  const submitted = Boolean(state.submissions.reading);
+  const number = Number(question.number);
+  const text = (question.question_text || "")
+    .replace(new RegExp(`^(?:Question\\s+)?${number}[.)]?\\s+`, "i"), "");
+  let stem = fillReadingPassage(`<span>${escapeHtml(text)}</span>`, [question]);
+  if (!stem.includes("data-reading-key=")) {
+    if (/_{2,}/.test(text)) stem = escapeHtml(text).replace(/_{2,}/, () => readingSelectHtml(question));
+    else stem = `${escapeHtml(text)} ${readingSelectHtml(question)}`;
+  }
+  return `<section class="question-card reading-question ${submitted ? "review-card" : ""}" data-key="${escapeHtml(question.key)}">
+    <h2>Question ${questionNumber(question)}</h2>
+    <div class="reading-question-stem">${stem}</div>
+    ${submitted ? questionFeedback(question) + reviewNoteHtml(question) : ""}
+  </section>`;
+}
+
+function renderReadingQuestionSet(group, layout) {
+  const passages = layout?.passages || [];
+  const embedded = new Set(passages.flatMap((passage) => passage.keys));
+  $("mediaArea").innerHTML = "";
+  $("answerArea").innerHTML = group.questions.map((question) => {
+    const passage = passages.find((item) => item.keys[0] === question.key);
+    if (passage) {
+      const questions = passage.keys.map((key) => group.questions.find((item) => item.key === key));
+      return `<section class="reading-passage" aria-label="Complete the message">
+        <p class="reading-passage-instruction">${escapeHtml(passage.instruction)}</p>
+        <div class="reading-passage-body">${fillReadingPassage(passage.html, questions)}</div>
+      </section>${state.submissions.reading ? questions.map((item) => `<section
+        class="question-card review-card" data-key="${escapeHtml(item.key)}">
+        <h2>Question ${questionNumber(item)}</h2>${questionFeedback(item)}${reviewNoteHtml(item)}</section>`).join("") : ""}`;
+    }
+    return embedded.has(question.key) ? "" : renderQuestionCard(question);
+  }).join("");
+  $("answerArea").querySelectorAll(".reading-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      if (state.submissions.reading) return;
+      if (select.value) state.answers[select.dataset.readingKey] = select.value;
+      else delete state.answers[select.dataset.readingKey];
+      select.title = select.selectedOptions[0]?.textContent || "";
+      persist();
+      renderStats();
+      $("nextBtn").disabled = !isMockActive() && group.questions.some((question) => !state.answers[question.key]);
+    });
+  });
+  group.questions.forEach(bindQuestionCard);
+  $("feedback").hidden = true;
+}
+
 function renderQuestionCard(q, strictListening = false) {
   const saved = state.answers[q.key];
   const media = q.media?.length
@@ -1830,6 +2023,7 @@ function renderQuestionCard(q, strictListening = false) {
     : "";
   const taskMedia = q.question_html ? "" : media;
   if (q.question_type === "multiple_choice_single") {
+    if (q.section === "reading") return renderReadingQuestion(q);
     const submitted = Boolean(state.submissions[state.section]);
     const checked = state.checked[q.key];
     const answerRevealed = checked === false && state.revealedAnswers.has(q.key);

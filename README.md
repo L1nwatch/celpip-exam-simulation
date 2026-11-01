@@ -10,6 +10,8 @@ After submission, click a completed section on the overview to review its latest
 
 Writing prompts recover paragraphs and bullet points from saved source pages when imported question data contains only plain text. Model responses and old source-page editors remain excluded from the task prompt.
 
+Reading uses drop-down answers. Replies in Part 1, diagram emails in Part 2, and comments in Part 4 keep their original paragraphs, with each answer selected inside the passage. Part 3 keeps the A–E paragraph choices. Selections save automatically and remain visible during review.
+
 Speaking prompts also recover the original paragraphs, line breaks, options and pictures for every task type. Source-page fonts and large empty gaps are normalized, pictures appear alongside their instructions without duplication, and the preparation/recording controls stay visible while scrolling.
 
 No official CELPIP content is included. Public demo content is fake; real or licensed practice material must stay local.
