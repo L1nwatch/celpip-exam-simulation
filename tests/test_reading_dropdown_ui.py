@@ -143,9 +143,9 @@ class ReadingDropdownUiTests(unittest.TestCase):
         self.assertEqual(4, len(self.driver.find_elements("css selector", '[role="option"]')))
         self.assertFalse(self.driver.find_elements("css selector", "#answerArea select"))
 
-    def test_answers_persist_without_replacing_the_paragraph_and_enable_next(self):
+    def test_answers_persist_without_replacing_the_paragraph(self):
         passage = self.driver.find_element("css selector", ".reading-passage-body")
-        self.assertFalse(self.driver.find_element("id", "nextBtn").is_enabled())
+        self.assertTrue(self.driver.find_element("id", "nextBtn").is_enabled())
         for key in self.groups[1]["question_keys"]:
             self.choose(key)
         self.assertTrue(passage.is_displayed())  # Selecting preserves the live DOM and reading position.
@@ -157,6 +157,32 @@ class ReadingDropdownUiTests(unittest.TestCase):
         self.assertTrue(self.driver.find_element("id", "nextBtn").is_enabled())
         answers = json.loads(self.driver.execute_script("return localStorage.getItem('celpip-practice:local_celpip1_test1')"))
         self.assertEqual("reading-2-1-o2", answers["reading-2-1"])
+
+    def test_unanswered_reading_can_advance_or_cancel_without_unlocking_previous_parts(self):
+        self.driver.find_element("id", "nextBtn").click()
+        self.assertIn("8 unanswered", self.driver.switch_to.alert.text)
+        self.driver.switch_to.alert.dismiss()
+        self.assertEqual(1, self.driver.execute_script("return state.index"))
+        self.driver.find_element("id", "nextBtn").click()
+        self.driver.switch_to.alert.accept()
+        WebDriverWait(self.driver, 5).until(lambda d: d.execute_script("return state.index === 2 && !!document.querySelector('.part-dot.active[data-index=\"2\"]')"))
+        self.assertFalse(self.driver.find_element("id", "prevBtn").is_displayed())
+        self.assertFalse(self.driver.find_element("css selector", '.part-dot[data-index="1"]').is_enabled())
+        self.open_part(4)
+        self.driver.find_element("id", "nextBtn").click()
+        self.assertIn("10 unanswered", self.driver.switch_to.alert.text)
+        self.driver.switch_to.alert.dismiss()
+        self.assertFalse(self.driver.execute_script("return !!state.submissions.reading"))
+
+    def test_reading_expiry_advances_without_an_unanswered_confirmation(self):
+        error = self.driver.execute_async_script("""
+            const done = arguments[0];
+            state.timer.remaining = 0;
+            handleTimerExpired().then(() => done(null)).catch(e => done(e.message));
+        """)
+        self.assertIsNone(error)
+        self.assertEqual(2, self.driver.execute_script("return state.index"))
+        self.assertGreater(self.driver.execute_script("return state.timer.remaining"), 595)
 
     def test_correspondence_and_viewpoints_keep_source_and_reply_separate(self):
         for part in (1, 4):

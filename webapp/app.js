@@ -601,6 +601,16 @@ function displayGroupTitle(group, index = state.index) {
 }
 
 function questionNumber(q, i = state.index) {
+  if (q?.section === "listening" && state.section === "listening") {
+    const groups = sectionGroups();
+    const groupIndex = groups.findIndex((group) => group.questions.some((question) => question.key === q.key));
+    const group = groups[groupIndex];
+    if (group && listeningGroupOrder(group) < 3) {
+      return groups.slice(0, groupIndex).filter((item) => listeningGroupOrder(item) < 3)
+        .reduce((total, item) => total + item.questions.length, 0)
+        + group.questions.findIndex((question) => question.key === q.key) + 1;
+    }
+  }
   return q?.number || i + 1;
 }
 
@@ -1078,12 +1088,18 @@ function renderSections() {
 async function render() {
   stopSpeakingTask();
   stopPracticePlayback();
+  if (["listening", "reading"].includes(state.section) && !state.submissions[state.section]) {
+    $("nextBtn").disabled = true;
+    $("questionNav").querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  }
   const groups = sectionGroups();
   if (!groups.length) return;
   if (state.index >= groups.length) state.index = groups.length - 1;
   const group = currentGroup();
   const submitted = Boolean(state.submissions[state.section]);
+  const context = `${state.testId}:${state.section}:${state.index}`;
   const readingLayout = state.section === "reading" ? await loadReadingLayout(group) : null;
+  if (context !== `${state.testId}:${state.section}:${state.index}`) return;
   if (state.section === "writing") await Promise.all(group.questions.map(loadWritingPrompt));
   const showSpeakingIntro = state.section === "speaking" && state.sectionIntro;
   if (state.section === "speaking" && !showSpeakingIntro) {
@@ -1145,23 +1161,22 @@ async function render() {
   const isLastPart = state.index === groups.length - 1;
   const nextSubmits = isLastPart && !submitted && ["reading", "writing"].includes(state.section);
   const unansweredInPart = group.questions.filter((question) => !state.answers[question.key]).length;
-  const readingIncomplete = state.section === "reading" && !submitted && unansweredInPart > 0 && !isMockActive();
-  $("nextBtn").disabled = readingIncomplete || (isLastPart && !nextSubmits);
+  $("nextBtn").disabled = isLastPart && !nextSubmits;
   $("nextBtn").textContent = nextSubmits ? (isMockActive() ? "Finish section & continue" : "Submit Section") : "Next";
-  $("nextBtn").title = readingIncomplete
-    ? `Answer ${unansweredInPart} remaining question${unansweredInPart === 1 ? "" : "s"} before continuing.`
+  $("nextBtn").title = state.section === "reading" && !submitted && unansweredInPart
+    ? `${unansweredInPart} unanswered. You cannot return after leaving this Part.`
     : "";
 }
 
 function handleNext() {
   const isLastPart = state.index === sectionGroups().length - 1;
-  if (isLastPart && !state.submissions[state.section] && ["reading", "writing"].includes(state.section)) {
-    submitSection();
-    return;
-  }
   if (state.section === "reading" && !state.submissions.reading) {
     const unanswered = currentGroup().questions.filter((question) => !state.answers[question.key]).length;
     if (unanswered && !window.confirm(`You have ${unanswered} unanswered question${unanswered === 1 ? "" : "s"} in this Part. CELPIP does not allow returning after you continue. Leave this Part?`)) return;
+  }
+  if (isLastPart && !state.submissions[state.section] && ["reading", "writing"].includes(state.section)) {
+    submitSection();
+    return;
   }
   moveQuestion(1);
 }
@@ -1262,7 +1277,11 @@ function groupNavLabel(groups, group, index) {
 }
 
 function displayPartLabel(index = state.index) {
-  if (state.section === "listening") return `Part ${listeningPartLabel(index)}`;
+  if (state.section === "listening") {
+    const label = listeningPartLabel(index);
+    if (/^1[ABC]$/.test(label)) return `Part 1 · Section ${label.charCodeAt(1) - 64}`;
+    return `Part ${label}`;
+  }
   return `Part ${index + 1}`;
 }
 
@@ -1625,6 +1644,16 @@ function renderQuestionSet(group, partMedia = [], readingLayout = null) {
     && !state.submissions[state.section]
     && !state.listeningUnlocked.has(listeningUnlockKey(group));
 
+  if (state.section === "listening" && !state.submissions.listening
+    && !listeningGroupTimerSeconds(state.index)) {
+    const missing = group.questions.find((question) => /Listen to (?:a short statement|the question)/i.test(question.question_text || "")
+      && !question.media?.some((item) => item.type === "audio"));
+    if (missing) {
+      renderMissingListeningQuestion(group, missing);
+      return;
+    }
+  }
+
   if (listeningLocked && partMedia.length) {
     renderListeningGate(group, partMedia[0]);
     return;
@@ -1648,6 +1677,11 @@ function renderQuestionSet(group, partMedia = [], readingLayout = null) {
   $("mediaArea").innerHTML = partMedia.length
     ? `<div class="part-media"><strong>Prompt media</strong>${partMedia.map(mediaNode).join("")}</div>`
     : "";
+  if (state.section === "listening" && listeningGroupTimerSeconds(state.index)) {
+    renderListeningAnswerGroup(group);
+    $("feedback").hidden = true;
+    return;
+  }
   $("answerArea").innerHTML = group.questions.map((question) => renderQuestionCard(question)).join("");
   group.questions.forEach(bindQuestionCard);
   $("feedback").hidden = true;
@@ -1678,7 +1712,10 @@ function renderListeningQuestion(group) {
   const index = Math.min(state.listeningQuestionIndex.get(key) || 0, group.questions.length - 1);
   state.listeningQuestionIndex.set(key, index);
   const question = group.questions[index];
-  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Passage completed</strong><span>Question ${index + 1} of ${group.questions.length}</span></div>`;
+  const total = listeningGroupOrder(group) < 3
+    ? sectionGroups().filter((item) => listeningGroupOrder(item) < 3).reduce((sum, item) => sum + item.questions.length, 0)
+    : group.questions.length;
+  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Passage completed</strong><span>Question ${questionNumber(question)} of ${total}</span></div>`;
   $("answerArea").innerHTML = `${renderQuestionCard(question, true)}
     <div class="listening-question-controls">
       <span>Time remaining: <strong id="listeningQuestionTime">00:30</strong></span>
@@ -1687,8 +1724,29 @@ function renderListeningQuestion(group) {
   bindQuestionCard(question);
   $("feedback").hidden = true;
   $("nextListeningQuestion").addEventListener("click", () => advanceListeningQuestion(group));
-  startListeningQuestionTimer(group, 30);
-  startListeningQuestionAudio();
+  if (!state.timer.running) toggleTimer();
+  const clock = startListeningQuestionTimer(group, 30);
+  startListeningQuestionAudio(clock);
+}
+
+function renderMissingListeningQuestion(group, question) {
+  stopTimer();
+  stopListeningQuestionTimer();
+  $("mediaArea").innerHTML = "";
+  $("answerArea").innerHTML = `<section class="question-card data-quality-warning">
+    <h2>Question audio unavailable</h2>
+    <p>The spoken prompt for Question ${questionNumber(question)} is missing from this material pack. This part is paused so you are not asked to answer without hearing the question.</p>
+    <p>Choose another test or restore the missing audio before continuing.</p>
+    <button id="missingListeningReturn" type="button">Return to Overview</button>
+  </section>`;
+  $("feedback").hidden = true;
+  $("missingListeningReturn").addEventListener("click", showOverview);
+}
+
+function renderListeningAnswerGroup(group) {
+  $("answerArea").innerHTML = `<div class="reading-question-list listening-choice-list">${group.questions.map(renderReadingQuestion).join("")}</div>`;
+  bindReadingAnswerMenus(group);
+  group.questions.forEach(bindQuestionCard);
 }
 
 function renderListeningQuestionGroup(group, seconds) {
@@ -1705,50 +1763,137 @@ function renderListeningQuestionGroup(group, seconds) {
       <button id="nextListeningQuestion" type="button">Finish Part</button>
     </div>
   </div>`;
-  $("answerArea").innerHTML = group.questions.map((question) => renderQuestionCard(question)).join("");
-  group.questions.forEach(bindQuestionCard);
+  renderListeningAnswerGroup(group);
   $("feedback").hidden = true;
   $("nextListeningQuestion").addEventListener("click", advanceListeningPart);
-  startListeningQuestionTimer(group, seconds, advanceListeningPart);
+  if (!state.timer.running) toggleTimer();
+  const clock = startListeningQuestionTimer(group, seconds, advanceListeningPart);
+  const menuCleanup = state.practiceCleanup;
+  state.practiceCleanup = () => { menuCleanup?.(); clock.pause(); };
 }
 
 function startListeningQuestionTimer(group, seconds, onExpire = () => advanceListeningQuestion(group)) {
   const timerKey = `${listeningUnlockKey(group)}:${state.listeningQuestionIndex.get(listeningUnlockKey(group)) || 0}`;
+  const exam = state.exam;
   let remaining = isMockActive() ? (state.exam.listeningRemaining?.[timerKey] ?? seconds) : seconds;
   const output = $("listeningQuestionTime");
-  if (output) output.textContent = formatDuration(remaining);
-  state.listeningQuestionTimer = window.setInterval(() => {
-    remaining -= 1;
-    if (output) output.textContent = formatDuration(remaining);
-    if (isMockActive()) {
-      state.exam.listeningRemaining ||= {};
-      state.exam.listeningRemaining[timerKey] = Math.max(0, remaining);
+  let timerId = null;
+  let deadline = null;
+  let expired = false;
+  let lastSaved = null;
+  const save = () => {
+    const value = Math.ceil(remaining);
+    if (output?.isConnected) output.textContent = formatDuration(value);
+    if (isMockActive() && state.exam === exam && value !== lastSaved) {
+      lastSaved = value;
+      exam.listeningRemaining ||= {};
+      exam.listeningRemaining[timerKey] = value;
       persist();
     }
-    if (remaining <= 0) onExpire();
-  }, 1000);
+  };
+  const pause = () => {
+    if (deadline !== null) remaining = Math.max(0, (deadline - performance.now()) / 1000);
+    window.clearInterval(timerId);
+    if (state.listeningQuestionTimer === timerId) state.listeningQuestionTimer = null;
+    timerId = null;
+    deadline = null;
+    save();
+  };
+  const resume = () => {
+    if (timerId !== null || expired) return;
+    deadline = performance.now() + remaining * 1000;
+    timerId = window.setInterval(() => {
+      remaining = Math.max(0, (deadline - performance.now()) / 1000);
+      save();
+      if (remaining <= 0 && !expired) {
+        expired = true;
+        pause();
+        onExpire();
+      }
+    }, 100);
+    state.listeningQuestionTimer = timerId;
+    save();
+  };
+  resume();
+  return {pause, resume};
 }
 
-async function startListeningQuestionAudio() {
+async function startListeningQuestionAudio(clock) {
   const player = $("listeningQuestionAudio");
   const fallback = $("startQuestionAudio");
-  if (!player) return;
-  fallback?.addEventListener("click", async () => {
+  const next = $("nextListeningQuestion");
+  if (!player) {
+    state.practiceCleanup = () => clock.pause();
+    return;
+  }
+  const exam = state.exam;
+  const key = player.closest("[data-key]")?.dataset.key;
+  const saved = exam?.listeningQuestionAudio?.[key];
+  let cancelled = false;
+  let restorePosition = saved?.position || 0;
+  let lastSaved = -1;
+  const recordPosition = (ended = false) => {
+    const position = Math.floor(player.currentTime || 0);
+    if (!exam || state.exam !== exam || !isMockActive() || position === lastSaved && !ended) return;
+    lastSaved = position;
+    exam.listeningQuestionAudio ||= {};
+    exam.listeningQuestionAudio[key] = {position, ended};
+    persist();
+  };
+  const loaded = () => {
+    if (restorePosition > 0 && Number.isFinite(player.duration)) {
+      player.currentTime = Math.min(restorePosition, Math.max(0, player.duration - .05));
+      restorePosition = 0;
+    }
+  };
+  const failed = () => {
+    if (cancelled || !player.isConnected) return;
+    clock.pause();
+    stopTimer();
+    next.disabled = true;
+    fallback.hidden = false;
+    fallback.disabled = false;
+    fallback.textContent = "Play question audio — time paused";
+  };
+  const ended = () => {
+    if (cancelled || !player.isConnected) return;
+    next.disabled = false;
+    recordPosition(true);
+  };
+  const progress = () => recordPosition();
+  player.addEventListener("loadedmetadata", loaded);
+  player.addEventListener("timeupdate", progress);
+  player.addEventListener("ended", ended);
+  player.addEventListener("error", failed);
+  state.practiceCleanup = () => {
+    cancelled = true;
+    clock.pause();
+    player.removeEventListener("loadedmetadata", loaded);
+    player.removeEventListener("timeupdate", progress);
+    player.removeEventListener("ended", ended);
+    player.removeEventListener("error", failed);
+    player.pause();
+  };
+  if (saved?.ended) { next.disabled = false; return; }
+  next.disabled = true;
+  const play = async () => {
+    if (cancelled) return;
     fallback.disabled = true;
+    if (player.error) {
+      restorePosition = Math.max(restorePosition, player.currentTime || 0);
+      player.load();
+    }
+    clock.resume();
+    if (!state.timer.running) toggleTimer();
     try {
       await player.play();
-      fallback.hidden = true;
-    } catch (error) {
-      fallback.disabled = false;
-      fallback.textContent = `Audio unavailable: ${error.message}`;
+      if (!cancelled) fallback.hidden = true;
+    } catch {
+      failed();
     }
-  });
-  try {
-    await player.play();
-    if (fallback) fallback.hidden = true;
-  } catch {
-    if (fallback) fallback.hidden = false;
-  }
+  };
+  fallback.addEventListener("click", play);
+  await play();
 }
 
 async function advanceListeningQuestion(group) {
@@ -1805,35 +1950,74 @@ function renderListeningGate(group, media) {
   const status = $("passageStatus");
   const track = $("passageProgressTrack");
   const progress = $("passageProgressBar");
+  const exam = state.exam;
+  const key = listeningUnlockKey(group);
+  let cancelled = false;
+  let restorePosition = exam?.listeningPassageTimes?.[key] || 0;
+  let lastSaved = -1;
   const updateProgress = () => {
     if (Number.isFinite(player.duration) && player.duration > 0) {
       const percent = Math.min(100, (player.currentTime / player.duration) * 100);
       progress.style.width = `${percent}%`;
       track.setAttribute("aria-label", `Passage progress ${Math.round(percent)}%`);
     }
+    const position = Math.floor(player.currentTime || 0);
+    if (exam && state.exam === exam && isMockActive() && position !== lastSaved) {
+      lastSaved = position;
+      exam.listeningPassageTimes ||= {};
+      exam.listeningPassageTimes[key] = position;
+      persist();
+    }
+  };
+  const loaded = () => {
+    if (restorePosition > 0 && Number.isFinite(player.duration)) {
+      player.currentTime = Math.min(restorePosition, Math.max(0, player.duration - .05));
+      restorePosition = 0;
+    }
+    updateProgress();
+  };
+  const failed = () => {
+    if (cancelled || !player.isConnected) return;
+    stopTimer();
+    startButton.disabled = false;
+    startButton.textContent = `Start ${isVideo ? "Video" : "Audio"}`;
+    status.textContent = "Playback could not start or was interrupted. Click Start to continue. Your time is paused.";
   };
   startButton.addEventListener("click", async () => {
+    if (cancelled) return;
     if (!state.timer.running) toggleTimer();
     startButton.disabled = true;
     startButton.textContent = "Playing...";
     status.textContent = "Listen carefully. Questions remain hidden until playback ends.";
+    if (player.error) {
+      restorePosition = Math.max(restorePosition, player.currentTime || 0);
+      player.load();
+    }
     try {
       await player.play();
-    } catch (error) {
-      startButton.disabled = false;
-      startButton.textContent = `Start ${isVideo ? "Video" : "Audio"}`;
-      status.textContent = `Playback could not start: ${error.message}`;
+    } catch {
+      failed();
     }
   });
-  player.addEventListener("loadedmetadata", updateProgress);
+  player.addEventListener("loadedmetadata", loaded);
   player.addEventListener("timeupdate", updateProgress);
-  player.addEventListener("ended", () => {
-    const key = listeningUnlockKey(group);
+  const ended = () => {
+    if (cancelled || !player.isConnected) return;
     state.listeningUnlocked.add(key);
     state.listeningQuestionIndex.set(key, 0);
     renderPracticeStep();
-  });
-  if (isMockActive()) startButton.click();
+  };
+  player.addEventListener("ended", ended);
+  player.addEventListener("error", failed);
+  state.practiceCleanup = () => {
+    cancelled = true;
+    player.removeEventListener("loadedmetadata", loaded);
+    player.removeEventListener("timeupdate", updateProgress);
+    player.removeEventListener("ended", ended);
+    player.removeEventListener("error", failed);
+    player.pause();
+  };
+  startButton.click();
 }
 
 function readingBlankPattern() {
@@ -1924,7 +2108,7 @@ async function loadReadingLayout(group) {
 }
 
 function readingSelectHtml(question) {
-  const submitted = Boolean(state.submissions.reading);
+  const submitted = Boolean(state.submissions[question.section]);
   const saved = state.answers[question.key];
   const checked = state.checked[question.key];
   const selected = question.options.find((option) => saved === option.id || saved === option.value);
@@ -1967,7 +2151,7 @@ function fillReadingPassage(html, questions) {
 }
 
 function renderReadingQuestion(question) {
-  const submitted = Boolean(state.submissions.reading);
+  const submitted = Boolean(state.submissions[question.section]);
   const number = Number(question.number);
   const matching = /^_{2,}\s*[-–]?/.test(question.question_text || "");
   const text = matching ? question.question_text : `${number}. ${(question.question_text || "")
@@ -2016,6 +2200,7 @@ function renderReadingQuestionSet(group, layout) {
 }
 
 function bindReadingAnswerMenus(group) {
+  const section = state.section;
   const menu = document.createElement("div");
   menu.id = "readingAnswerOptions";
   menu.className = "reading-answer-menu";
@@ -2023,6 +2208,7 @@ function bindReadingAnswerMenus(group) {
   menu.hidden = true;
   document.body.append(menu);
   let active = null;
+  let disposed = false;
   const close = () => {
     active?.control.setAttribute("aria-expanded", "false");
     active?.control.removeAttribute("aria-activedescendant");
@@ -2054,7 +2240,7 @@ function bindReadingAnswerMenus(group) {
     return true;
   };
   const open = (control, question) => {
-    if (state.submissions.reading) return;
+    if (disposed || state.submissions[section]) return;
     if (active?.control === control) { close(); return; }
     close();
     const saved = state.answers[question.key];
@@ -2073,7 +2259,7 @@ function bindReadingAnswerMenus(group) {
     highlight(active.index);
   };
   const choose = () => {
-    if (!active || state.submissions.reading) return;
+    if (disposed || !active || state.submissions[section]) return;
     const {control, question, index} = active;
     const option = question.options[index];
     state.answers[question.key] = option.id;
@@ -2085,13 +2271,17 @@ function bindReadingAnswerMenus(group) {
     control.focus({preventScroll: true});
     persist();
     renderStats();
-    $("nextBtn").disabled = !isMockActive() && group.questions.some((question) => !state.answers[question.key]);
+    renderQuestionNav(sectionGroups());
+    if (section === "reading") {
+      const unanswered = group.questions.filter((question) => !state.answers[question.key]).length;
+      $("nextBtn").title = unanswered ? `${unanswered} unanswered. You cannot return after leaving this Part.` : "";
+    }
   };
   $("answerArea").querySelectorAll(".reading-select").forEach((control) => {
     const question = group.questions.find((item) => item.key === control.dataset.readingKey);
     control.addEventListener("click", () => open(control, question));
     control.addEventListener("keydown", (event) => {
-      if (state.submissions.reading) return;
+      if (state.submissions[section]) return;
       const expanded = active?.control === control;
       if (["Enter", " ", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
@@ -2127,6 +2317,7 @@ function bindReadingAnswerMenus(group) {
   window.addEventListener("scroll", scroll, true);
   window.addEventListener("resize", close);
   state.practiceCleanup = () => {
+    disposed = true;
     close();
     menu.remove();
     document.removeEventListener("pointerdown", outside);
@@ -2137,8 +2328,10 @@ function bindReadingAnswerMenus(group) {
 
 function renderQuestionCard(q, strictListening = false) {
   const saved = state.answers[q.key];
-  const media = q.media?.length
-    ? `<div class="card-media">${strictListening ? listeningQuestionMedia(q.media) : q.media.map(mediaNode).join("")}</div>`
+  const optionImages = new Set((q.options || []).flatMap((option) => option.media || []).map((item) => item.path));
+  const cardMedia = (q.media || []).filter((item) => item.type !== "image" || !optionImages.has(item.path));
+  const media = cardMedia.length
+    ? `<div class="card-media">${strictListening ? listeningQuestionMedia(cardMedia) : cardMedia.map(mediaNode).join("")}</div>`
     : "";
   const taskMedia = q.question_html ? "" : media;
   if (q.question_type === "multiple_choice_single") {
@@ -2163,7 +2356,8 @@ function renderQuestionCard(q, strictListening = false) {
     return `<section class="question-card ${submitted ? "review-card" : ""}" data-key="${q.key}">
       <h2>Question ${questionNumber(q)}</h2>
       ${media}
-      <div class="card-question-text">${escapeHtml(q.question_text || "")}</div>
+      <div class="card-question-text">${escapeHtml(strictListening && cardMedia.some((item) => item.type === "audio")
+        ? "Listen to the question. You will hear it only once." : q.question_text || "")}</div>
       <div class="card-options">${options}</div>
       ${submitted ? questionFeedback(q) : ""}
       ${submitted ? reviewNoteHtml(q) : ""}
@@ -2761,6 +2955,7 @@ function bindQuestionCard(q) {
         card.querySelectorAll(".option").forEach((option) => option.classList.remove("selected"));
         input.closest(".option")?.classList.add("selected");
         renderStats();
+        renderQuestionNav(sectionGroups());
       } else {
         render();
       }
@@ -3574,13 +3769,13 @@ function toggleTimer() {
   state.timer.running = true;
   $("timerBtn").textContent = "Ⅱ";
   let lastTickAt = performance.now();
-  let lastExcludedMs = speakingCueExcludedMilliseconds(lastTickAt);
+  let lastExcludedMs = state.section === "speaking" ? speakingCueExcludedMilliseconds(lastTickAt) : 0;
   let pendingMs = 0;
   state.timer.id = window.setInterval(() => {
     let elapsedSeconds = 1;
-    if (state.section === "speaking") {
+    if (["listening", "reading", "speaking"].includes(state.section)) {
       const now = performance.now();
-      const excludedMs = speakingCueExcludedMilliseconds(now);
+      const excludedMs = state.section === "speaking" ? speakingCueExcludedMilliseconds(now) : 0;
       pendingMs += Math.max(0, now - lastTickAt - (excludedMs - lastExcludedMs));
       lastTickAt = now;
       lastExcludedMs = excludedMs;
@@ -3595,7 +3790,7 @@ function toggleTimer() {
     saveCurrentTiming(false);
     if (Math.floor(previousElapsed / 15) !== Math.floor(state.timer.elapsed / 15)) scheduleDraftSync(state.testId, 0);
     updateTimer();
-    if (state.timer.remaining === 0) handleTimerExpired();
+    if (state.timer.remaining === 0 && state.section !== "listening") handleTimerExpired();
   }, 1000);
 }
 
@@ -3628,7 +3823,7 @@ function stopTimer() {
 function updateTimer() {
   const timer = document.querySelector(".timer");
   const submission = state.submissions[state.section];
-  if (timer) timer.hidden = !submission && (state.section === "speaking" || isIntroSection(state.section) && state.sectionIntro);
+  if (timer) timer.hidden = !submission && (["listening", "speaking"].includes(state.section) || isIntroSection(state.section) && state.sectionIntro);
   if (submission) {
     $("timerLabel").textContent = "Time used";
     $("timerValue").textContent = submission.elapsed_seconds === null || submission.elapsed_seconds === undefined

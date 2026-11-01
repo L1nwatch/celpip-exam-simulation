@@ -272,6 +272,8 @@ class MockExamUiTests(unittest.TestCase):
         self.section("reading")
         self.assert_scores_hidden()
         self.driver.find_element("id", "nextBtn").click()
+        self.assertIn("unanswered", self.driver.switch_to.alert.text)
+        self.driver.switch_to.alert.accept()
         self.section("writing")
         for index in range(2):
             self.assert_scores_hidden()
