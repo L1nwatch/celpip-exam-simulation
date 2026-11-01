@@ -1,0 +1,20 @@
+{
+  "provider": "OpenAI",
+  "model": "gpt-4o-mini-tts",
+  "voice": "coral",
+  "input": "Start speaking now.",
+  "instructions": "Imagine you are sitting across from one person in a quiet room and letting them know it is their turn. Say the line as a relaxed, friendly, everyday instruction, in a neutral North American English accent. Use a smooth, connected conversational delivery, with subtle natural pitch variation and a gently warm voice. Say the whole sentence in one easy breath at a comfortable unhurried pace. Read exactly the provided sentence and nothing else.",
+  "response_format": "wav",
+  "generated_at": "2026-11-01T20:00:06.098304+00:00",
+  "ai_generated": true,
+  "official_celpip_audio": false,
+  "verified_transcript": "Start speaking now.",
+  "transcription_model": "gpt-4o-mini-transcribe",
+  "file": "start-speaking-now-natural.mp3",
+  "output_format": "mp3",
+  "gain_db": 6,
+  "source_duration_seconds": 2.2,
+  "output_duration_seconds": 1.65,
+  "post_processing": "Trim trailing silence; constant gain only; original pitch and pace retained.",
+  "sha256": "411d9e6eb31a6878b1572caa0d60cc4b2816170f382996c49d01409edf624870"
+}

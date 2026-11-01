@@ -18,6 +18,10 @@ Use **☆ Mark reviewed** in the top-right corner of a practice part to mark it 
 
 Existing whole-section review marks are converted once into reviewed marks for every part in that section. Each part can then be unmarked independently.
 
+Speaking uses separate preparation and recording progress bars without a live numeric countdown. Each bar fills as time passes. Use **Check Sound** to check your headset, then **Begin Speaking** to allow microphone access before the first task appears. Preparation starts when the task opens. When preparation ends, the start cue, “Start speaking now,” plays first. Recording and the speaking bar start only after the cue finishes, with the full speaking time available. The cue phase, including loading or retrying playback, is excluded from total elapsed time and the section timer. If playback fails, click **Play Start Cue** to retry while time stays paused. Recording stops automatically when time is up, and the next task opens after your response is saved.
+
+The bundled cue is AI-generated with OpenAI's Speech API using the `coral` voice and relaxed, connected conversational delivery. Its original pitch and pace are preserved; only volume and trailing silence are adjusted. It is generated in advance and plays from a local MP3 during practice. It is not an official CELPIP recording. The progress bars and automatic start follow the [official test features overview](https://www.celpip.ca/blog/the-official-celpip-podcast-episode-9-test-features/) and [May 2026 Speaking Pro study pack](https://www.celpip.ca/wp-content/uploads/2026/05/Revised-Speaking-Pro-Target-9-Study-Pack-2026.pdf). Waiting for the cue to finish and excluding its duration from all timing is this simulation's chosen behavior; the exact timing of the real test has not been independently verified. Saved recordings still show their duration during review.
+
 ## Screenshots
 
 Captured from the public-safe fake demo preview.

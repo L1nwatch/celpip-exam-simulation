@@ -202,7 +202,10 @@ class PracticeLayoutUiTests(unittest.TestCase):
             state.section = 'speaking'; state.sectionIntro = false; state.index = choiceStep ? 0 : 1;
             state.answers = liveFlow ? {} : {choose: 'choice:0:Sailing%20trip', persuade: 'recording:fixture'};
             state.submissions = review ? {speaking: {submitted_at: '2026-10-15'}} : {};
-            render().then(() => {stopPracticePlayback(); stopTimer(); done(null);}).catch(e => done(e.message));
+            render().then(() => {
+                if (!liveFlow) stopPracticePlayback();
+                stopTimer(); done(null);
+            }).catch(e => done(e.message));
         """, choose, persuade, choice_step, review, live_flow)
         self.assertIsNone(error)
 
@@ -295,10 +298,13 @@ class PracticeLayoutUiTests(unittest.TestCase):
         self.assertIn(expected, self.driver.find_element('css selector', '.speaking-option-card.is-selected').text)
         self.assertFalse(self.driver.find_element('css selector', '.recording-indicator').is_displayed())
         self.assert_live_comparison_visible()
-        initial = self.driver.find_element('css selector', '.recording-time').text
-        wait.until(lambda d: d.find_element('css selector', '.recording-time').text != initial)
+        self.assertFalse(self.driver.find_element('css selector', '.recording-time').is_displayed())
+        wait.until(lambda d: d.find_element('css selector', '.speaking-phase-label').text == 'Start cue')
+        self.assertFalse(self.driver.find_element('css selector', '.recording-indicator').is_displayed())
+        self.assert_live_comparison_visible()
 
         wait.until(lambda d: d.find_element('css selector', '.recording-indicator').is_displayed())
+        self.assertTrue(self.driver.execute_script("return document.querySelector('.speaking-start-cue').ended"))
         self.assertIn('is-recording', self.driver.find_element('css selector', '.speaking-recorder').get_attribute('class'))
         self.assertIn('Recording in progress', self.driver.find_element('css selector', '.recorder-status').text)
         self.assert_live_comparison_visible()

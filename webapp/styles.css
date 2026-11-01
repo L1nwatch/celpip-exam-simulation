@@ -1291,6 +1291,14 @@ textarea {
   line-height: 1.2;
 }
 
+.speaking-comparison-task .speaking-phase-progress {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0;
+}
+
 .speaking-comparison-task .recorder-status {
   margin-top: 4px;
 }
@@ -1586,6 +1594,44 @@ textarea {
 
 .stop-recording {
   background: var(--panel);
+}
+
+.speaking-phase-progress {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.speaking-phase-progress[hidden],
+.recording-time[hidden] {
+  display: none;
+}
+
+.speaking-phase-label {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.speaking-progress-track {
+  height: 16px;
+  overflow: hidden;
+  border: 1px solid #94a3b8;
+  border-radius: 3px;
+  background: #e2e8f0;
+}
+
+.speaking-progress-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #2563eb;
+  transition: width 100ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speaking-progress-fill {
+    transition: none;
+  }
 }
 
 .recording-time {

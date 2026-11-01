@@ -37,6 +37,9 @@ def chrome_options() -> Options:
     options.add_argument("--hide-scrollbars")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
+    # Keep the headset check reproducible without using a real microphone.
+    options.add_argument("--use-fake-device-for-media-stream")
+    options.add_argument("--use-fake-ui-for-media-stream")
     return options
 
 

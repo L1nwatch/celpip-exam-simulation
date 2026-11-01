@@ -8,6 +8,7 @@ const TESTS = Array.from({ length: 13 }, (_, index) => {
 
 const MATERIAL_ROOT = "../materials/private/packs";
 const SERVER_API_ENABLED = true;
+const SPEAKING_START_CUE_URL = "assets/audio/start-speaking-now-natural.mp3";
 
 const SECTIONS = [
   { id: "listening", label: "Listening", minutes: 47 },
@@ -90,6 +91,8 @@ const state = {
     elapsed: 0,
     partElapsed: 0,
     running: false,
+    cueExcludedMs: 0,
+    cueExcludedSince: null,
   },
 };
 
@@ -780,6 +783,7 @@ function toggleSidebar() {
 }
 
 function stopPracticePlayback() {
+  stopSpeakingTask();
   document.querySelectorAll("#practiceView audio, #practiceView video").forEach((media) => {
     try {
       media.pause();
@@ -1516,15 +1520,52 @@ function renderSpeakingIntro(groups) {
       <p class="eyebrow">Speaking</p>
       <h2>${escapeHtml(TESTS.find((test) => test.id === state.testId)?.label || state.testId)}</h2>
       <p>${groups.length} tasks · ${submitted ? "Completed" : hasProgress ? `${answered} response${answered === 1 ? "" : "s"} saved` : "Ready to start"}</p>
+      <p>Preparation and speaking time are shown with progress bars. Listen to “Start speaking now,” then begin your response when the cue finishes and the recording indicator appears. Cue playback is not counted toward your speaking time or total time.</p>
+      <small>Practice prompts use an AI-generated voice.</small>
     </div>
     <div class="section-start-actions">
       <button class="start-speaking-section" type="button">${primaryLabel}</button>
+      ${submitted ? "" : '<button class="speaking-sound-check ghost" type="button">Check Sound</button>'}
       ${(submitted || hasProgress) ? `<button class="practice-again ghost" data-test="${state.testId}" data-section="speaking" type="button">Practice Again</button>` : ""}
     </div>
+    <audio class="speaking-sound-preview" preload="auto" src="${SPEAKING_START_CUE_URL}" hidden></audio>
+    <small class="speaking-setup-status" role="status" aria-live="polite" hidden></small>
   </section>`;
   $("feedback").hidden = true;
   const startButton = $("answerArea").querySelector(".start-speaking-section");
+  const setupStatus = $("answerArea").querySelector(".speaking-setup-status");
+  const preview = $("answerArea").querySelector(".speaking-sound-preview");
+  $("answerArea").querySelector(".speaking-sound-check")?.addEventListener("click", async () => {
+    setupStatus.hidden = false;
+    try {
+      preview.currentTime = 0;
+      await preview.play();
+      setupStatus.textContent = "You should hear “Start speaking now.” Adjust your headset volume before you begin.";
+    } catch {
+      setupStatus.textContent = "Sound could not play. Check your headset and allow sound for this page before you begin.";
+    }
+  });
   startButton.addEventListener("click", async () => {
+    startButton.disabled = true;
+    preview.pause();
+    if (!submitted) {
+      setupStatus.hidden = false;
+      setupStatus.textContent = "Checking microphone...";
+      try {
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+          throw new Error("Audio recording is not supported by this browser.");
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        if (startButton.isConnected) {
+          setupStatus.textContent = `Microphone unavailable: ${error.message}. Check microphone access, then try again.`;
+          startButton.disabled = false;
+        }
+        return;
+      }
+    }
+    if (!startButton.isConnected || state.section !== "speaking") return;
     state.sectionIntro = false;
     state.index = 0;
     await renderPracticeStep();
@@ -1861,9 +1902,16 @@ function renderQuestionCard(q, strictListening = false) {
             <span class="recording-dot" aria-hidden="true"></span>
             Recording
           </span>
-          <strong class="recording-time">00:00</strong>
+          <strong class="recording-time" hidden></strong>
         </div>
       </div>
+      <div class="speaking-phase-progress">
+        <strong class="speaking-phase-label" role="status" aria-live="polite">Preparation</strong>
+        <div class="speaking-progress-track" role="progressbar" aria-label="Preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span class="speaking-progress-fill"></span>
+        </div>
+      </div>
+      <audio class="speaking-start-cue" preload="auto" src="${SPEAKING_START_CUE_URL}" hidden></audio>
       <audio class="recorded-playback" preload="metadata" hidden></audio>
       <div class="recorded-player" hidden>
         <button class="recorded-play-toggle" type="button" aria-label="Play recording">▶</button>
@@ -2462,6 +2510,36 @@ function bindQuestionCard(q) {
   }
 }
 
+function updateSpeakingProgress(card, phase, elapsed, total) {
+  const progress = card.querySelector(".speaking-progress-track");
+  const fill = card.querySelector(".speaking-progress-fill");
+  const label = card.querySelector(".speaking-phase-label");
+  const percent = total > 0 ? Math.min(100, Math.max(0, elapsed / total * 100)) : 100;
+  if (label) label.textContent = phase;
+  if (progress) {
+    progress.setAttribute("aria-label", `${phase} progress`);
+    progress.setAttribute("aria-valuenow", String(Math.round(percent)));
+  }
+  if (fill) fill.style.width = `${percent}%`;
+}
+
+function speakingCueExcludedMilliseconds(now = performance.now()) {
+  return state.timer.cueExcludedMs + (state.timer.cueExcludedSince === null
+    ? 0 : Math.max(0, now - state.timer.cueExcludedSince));
+}
+
+function excludeSpeakingCueTime() {
+  const startedAt = performance.now();
+  state.timer.cueExcludedSince = startedAt;
+  let finished = false;
+  return () => {
+    if (finished) return;
+    finished = true;
+    state.timer.cueExcludedMs += Math.max(0, performance.now() - startedAt);
+    state.timer.cueExcludedSince = null;
+  };
+}
+
 async function bindSpeakingRecorder(card, question) {
   const recordButton = card.querySelector(".record-response");
   const playback = card.querySelector(".recorded-playback");
@@ -2469,17 +2547,21 @@ async function bindSpeakingRecorder(card, question) {
   const recorderPanel = card.querySelector(".speaking-recorder");
   const status = card.querySelector(".recorder-status");
   const time = card.querySelector(".recording-time");
+  const progressPanel = card.querySelector(".speaking-phase-progress");
+  const startCue = card.querySelector(".speaking-start-cue");
   const recordingIndicator = card.querySelector(".recording-indicator");
   const choiceStep = isSpeakingChoiceStep(question);
-  const choiceUi = choiceStep ? await bindSpeakingChoiceSelector(card, question, status) : null;
+  if (!recordButton) return;
   if (state.submissions.speaking) {
     recordButton.hidden = true;
     status.textContent = "Loading recorded response...";
   }
-  const prep = question.timing?.preparation_seconds || 0;
+  const prep = Math.max(0, Number(question.timing?.preparation_seconds) || 0);
   const limit = speakingRecordingSeconds(question);
-  if (!recordButton || (limit && (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder))) {
-    if (recordButton) recordButton.disabled = true;
+  if (!state.submissions.speaking && !state.answers[question.key] && limit
+    && (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)) {
+    recordButton.disabled = true;
+    if (progressPanel) progressPanel.hidden = true;
     status.textContent = "Audio recording is not supported by this browser.";
     return;
   }
@@ -2491,19 +2573,29 @@ async function bindSpeakingRecorder(card, question) {
   let timerId;
   let started = false;
   let recordingStarted = false;
+  let recordingStarting = false;
   let preparationComplete = false;
   let micSetupPromise = null;
-  let disposed = false;
+  let cancelCuePlayback = null;
+  let finishCueExclusion = null;
+  let cancelled = false;
+  const isCurrent = () => !cancelled && card.isConnected;
   state.practiceCleanup = () => {
-    disposed = true;
+    cancelled = true;
     window.clearInterval(timerId);
+    cancelCuePlayback?.();
+    finishCueExclusion?.();
+    startCue?.pause();
     if (recorder?.state === "recording") recorder.stop();
     stream?.getTracks().forEach((track) => track.stop());
   };
   if (isMockActive() && state.answers[question.key]) {
-    window.setTimeout(() => { if (!disposed) advanceSpeakingTask(); }, 0);
+    window.setTimeout(() => { if (isCurrent()) advanceSpeakingTask(); }, 0);
     return;
   }
+  const choiceUi = choiceStep ? await bindSpeakingChoiceSelector(card, question, status) : null;
+  if (!isCurrent()) return;
+  if (progressPanel) progressPanel.hidden = Boolean(state.submissions.speaking || state.answers[question.key] && !choiceStep);
 
   const showRecordingIndicator = (active) => {
     recorderPanel?.classList.toggle("is-recording", active);
@@ -2521,11 +2613,12 @@ async function bindSpeakingRecorder(card, question) {
     if (!limit || recorder) return recorder;
     if (!micSetupPromise) {
       micSetupPromise = (async () => {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (disposed) {
-          stream.getTracks().forEach((track) => track.stop());
-          throw new Error("Task closed");
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!isCurrent()) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          return null;
         }
+        stream = mediaStream;
         const preferredType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
           .find((type) => MediaRecorder.isTypeSupported(type));
         recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
@@ -2534,16 +2627,18 @@ async function bindSpeakingRecorder(card, question) {
         });
         recorder.addEventListener("stop", async () => {
           window.clearInterval(timerId);
+          startCue?.pause();
           showRecordingIndicator(false);
           stream?.getTracks().forEach((track) => track.stop());
-          if (disposed) return;
+          if (!isCurrent()) return;
           const duration = Math.max(1, (Date.now() - startedAt) / 1000);
           const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
           status.textContent = "Saving recording...";
-          await uploadSpeakingRecording(question, blob, duration, status, playback);
+          await uploadSpeakingRecording(question, blob, duration, status, playback, isCurrent);
         });
         return recorder;
       })().catch((error) => {
+        stream?.getTracks().forEach((track) => track.stop());
         micSetupPromise = null;
         throw error;
       });
@@ -2551,7 +2646,36 @@ async function bindSpeakingRecorder(card, question) {
     return micSetupPromise;
   };
 
+  const playStartCue = () => new Promise((resolve, reject) => {
+    if (!startCue) {
+      reject(new Error("Start cue is unavailable."));
+      return;
+    }
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      startCue.removeEventListener("ended", onEnded);
+      startCue.removeEventListener("error", onError);
+      cancelCuePlayback = null;
+      if (error) reject(error);
+      else resolve();
+    };
+    const onEnded = () => finish();
+    const onError = () => finish(new Error("Start cue could not play."));
+    cancelCuePlayback = () => finish(new Error("Start cue cancelled."));
+    startCue.addEventListener("ended", onEnded);
+    startCue.addEventListener("error", onError);
+    try {
+      startCue.currentTime = 0;
+      startCue.play().catch(finish);
+    } catch (error) {
+      finish(error);
+    }
+  });
+
   const beginRecording = async () => {
+    if (!isCurrent() || recordingStarted || recordingStarting) return;
     window.clearInterval(timerId);
     preparationComplete = true;
     if (!limit) {
@@ -2562,57 +2686,80 @@ async function bindSpeakingRecorder(card, question) {
       advanceSpeakingTask();
       return;
     }
-    if (recordingStarted) return;
+    recordingStarting = true;
+    if (!finishCueExclusion) finishCueExclusion = excludeSpeakingCueTime();
+    let step = "microphone";
     try {
       recordButton.disabled = true;
       status.textContent = "Starting recording";
       await setupRecorder();
-      recordingStarted = true;
+      if (!isCurrent()) return;
       recordButton.hidden = true;
+      step = "cue";
+      status.textContent = "Listen to the start cue. Recording begins when it finishes.";
+      updateSpeakingProgress(card, "Start cue", 0, limit);
+      await playStartCue();
+      if (!isCurrent()) return;
+      step = "recording";
       recorder.start(250);
+      recordingStarted = true;
       startedAt = Date.now();
+      finishCueExclusion();
+      finishCueExclusion = null;
       showRecordingIndicator(true);
-      let recordingRemaining = limit || 60;
       status.textContent = "Recording in progress";
-      time.textContent = formatDuration(recordingRemaining);
+      updateSpeakingProgress(card, "Recording", 0, limit);
       timerId = window.setInterval(() => {
-        recordingRemaining -= 1;
-        time.textContent = formatDuration(recordingRemaining);
-        if (recordingRemaining <= 0 && recorder.state === "recording") recorder.stop();
-      }, 1000);
+        const elapsed = (Date.now() - startedAt) / 1000;
+        updateSpeakingProgress(card, "Recording", elapsed, limit);
+        if (elapsed >= limit && recorder.state === "recording") {
+          updateSpeakingProgress(card, "Time is up", limit, limit);
+          recorder.stop();
+        }
+      }, 100);
     } catch (error) {
+      if (!isCurrent()) return;
       showRecordingIndicator(false);
+      startCue?.pause();
       stream?.getTracks().forEach((track) => track.stop());
-      showMicFallback(`Microphone unavailable: ${error.message}. Click Start Recording to retry.`, "Start Recording");
+      recorder = null;
+      micSetupPromise = null;
+      if (step === "cue") {
+        showMicFallback("Start cue could not play. Check sound, then click Play Start Cue. Your time is paused.", "Play Start Cue");
+      } else {
+        showMicFallback(`Microphone unavailable: ${error.message}. Click Start Recording to retry. Your time is paused.`, "Start Recording");
+      }
+    } finally {
+      recordingStarting = false;
     }
   };
 
   const startSpeakingTask = () => {
-    if (disposed || !card.isConnected || started || (!choiceStep && state.answers[question.key]) || state.submissions.speaking) return;
+    if (!isCurrent() || started || (!choiceStep && state.answers[question.key]) || state.submissions.speaking) return;
     started = true;
     try {
       chunks = [];
       recordButton.disabled = true;
       recordButton.hidden = true;
-      let preparationRemaining = prep;
+      const preparationStartedAt = Date.now();
       status.textContent = choiceStep ? "Choose an option — no recording in this step." : "Preparation time";
-      time.textContent = formatDuration(preparationRemaining);
+      updateSpeakingProgress(card, "Preparation", 0, prep);
       if (limit) {
         setupRecorder().catch((error) => {
-          if (!preparationComplete) {
+          if (isCurrent() && !preparationComplete) {
             showMicFallback(`Click Enable Microphone so recording can start automatically. ${error.message}`);
           }
         });
       }
 
-      if (preparationRemaining <= 0) {
+      if (prep <= 0) {
         beginRecording();
       } else {
         timerId = window.setInterval(() => {
-          preparationRemaining -= 1;
-          time.textContent = formatDuration(preparationRemaining);
-          if (preparationRemaining <= 0) beginRecording();
-        }, 1000);
+          const elapsed = (Date.now() - preparationStartedAt) / 1000;
+          updateSpeakingProgress(card, "Preparation", elapsed, prep);
+          if (elapsed >= prep) beginRecording();
+        }, 100);
       }
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
@@ -2625,19 +2772,26 @@ async function bindSpeakingRecorder(card, question) {
     recordButton.disabled = true;
     try {
       await setupRecorder();
+      if (!isCurrent()) return;
       recordButton.hidden = true;
       if (preparationComplete) beginRecording();
       else status.textContent = choiceStep ? "Choose an option — no recording in this step." : "Preparation time";
     } catch (error) {
+      if (!isCurrent()) return;
       const label = preparationComplete ? "Start Recording" : "Enable Microphone";
       showMicFallback(`Microphone unavailable: ${error.message}. Click ${label} to retry.`, label);
     }
   });
 
+  if (!state.submissions.speaking && (!state.answers[question.key] || choiceStep)) {
+    startSpeakingTask();
+    return;
+  }
   try {
     const params = new URLSearchParams({ test_id: state.testId, question_key: question.key });
     const response = await fetch(`/api/recordings?${params}`);
     const recordings = response.ok ? (await response.json()).recordings || [] : [];
+    if (!isCurrent()) return;
     if (recordings.length) {
       if (state.submissions.speaking) {
         const recordingId = /^recording:(\d+)$/.exec(String(state.answers[question.key] || ""))?.[1];
@@ -2650,16 +2804,17 @@ async function bindSpeakingRecorder(card, question) {
         recordButton.hidden = true;
         status.textContent = `Recorded response saved ${new Date(recording.created_at).toLocaleString()}.`;
         time.textContent = formatDuration(recording.duration_seconds || 0);
+        time.hidden = false;
       } else if (state.answers[question.key]) {
         recordButton.disabled = true;
         status.textContent = "Response recorded. Continue to the next task.";
         time.textContent = formatDuration(recordings[0].duration_seconds || 0);
+        time.hidden = false;
       }
     }
   } catch {
     // Recording remains available for the current page even if history lookup fails.
   }
-  window.setTimeout(startSpeakingTask, 300);
 }
 
 function bindRecordedPlayback(card, playback) {
@@ -2733,7 +2888,7 @@ function bindRecordedPlayback(card, playback) {
   };
 }
 
-async function uploadSpeakingRecording(question, blob, duration, status, playback) {
+async function uploadSpeakingRecording(question, blob, duration, status, playback, isCurrent = () => true) {
   try {
     const params = new URLSearchParams({
       test_id: state.testId,
@@ -2747,6 +2902,7 @@ async function uploadSpeakingRecording(question, blob, duration, status, playbac
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!isCurrent()) return;
     state.answers[question.key] = `recording:${result.recording_id}`;
     persist();
     playback.hidden = true;
@@ -2754,9 +2910,10 @@ async function uploadSpeakingRecording(question, blob, duration, status, playbac
     renderStats();
     const exam = state.exam;
     window.setTimeout(() => {
-      if (state.exam === exam && currentGroup()?.questions.some((item) => item.key === question.key)) advanceSpeakingTask();
+      if (isCurrent() && state.exam === exam && currentGroup()?.questions.some((item) => item.key === question.key)) advanceSpeakingTask();
     }, 800);
   } catch (error) {
+    if (!isCurrent()) return;
     status.textContent = `Recorded for this page, but local save failed: ${error.message}`;
   }
 }
@@ -3103,12 +3260,27 @@ function toggleTimer() {
   if (state.timer.remaining <= 0) resetSectionTimer();
   state.timer.running = true;
   $("timerBtn").textContent = "Ⅱ";
+  let lastTickAt = performance.now();
+  let lastExcludedMs = speakingCueExcludedMilliseconds(lastTickAt);
+  let pendingMs = 0;
   state.timer.id = window.setInterval(() => {
-    state.timer.remaining = Math.max(0, state.timer.remaining - 1);
-    state.timer.elapsed += 1;
-    state.timer.partElapsed += 1;
+    let elapsedSeconds = 1;
+    if (state.section === "speaking") {
+      const now = performance.now();
+      const excludedMs = speakingCueExcludedMilliseconds(now);
+      pendingMs += Math.max(0, now - lastTickAt - (excludedMs - lastExcludedMs));
+      lastTickAt = now;
+      lastExcludedMs = excludedMs;
+      elapsedSeconds = Math.floor(pendingMs / 1000);
+      pendingMs -= elapsedSeconds * 1000;
+      if (!elapsedSeconds) return;
+    }
+    const previousElapsed = state.timer.elapsed;
+    state.timer.remaining = Math.max(0, state.timer.remaining - elapsedSeconds);
+    state.timer.elapsed += elapsedSeconds;
+    state.timer.partElapsed += elapsedSeconds;
     saveCurrentTiming(false);
-    if (state.timer.elapsed % 15 === 0) scheduleDraftSync(state.testId, 0);
+    if (Math.floor(previousElapsed / 15) !== Math.floor(state.timer.elapsed / 15)) scheduleDraftSync(state.testId, 0);
     updateTimer();
     if (state.timer.remaining === 0) handleTimerExpired();
   }, 1000);
@@ -3143,7 +3315,7 @@ function stopTimer() {
 function updateTimer() {
   const timer = document.querySelector(".timer");
   const submission = state.submissions[state.section];
-  if (timer) timer.hidden = isIntroSection(state.section) && state.sectionIntro && !submission;
+  if (timer) timer.hidden = !submission && (state.section === "speaking" || isIntroSection(state.section) && state.sectionIntro);
   if (submission) {
     $("timerLabel").textContent = "Time used";
     $("timerValue").textContent = submission.elapsed_seconds === null || submission.elapsed_seconds === undefined
