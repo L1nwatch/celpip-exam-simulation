@@ -10,7 +10,7 @@ After submission, click a completed section on the overview to review its latest
 
 Writing prompts recover paragraphs and bullet points from saved source pages when imported question data contains only plain text. Model responses and old source-page editors remain excluded from the task prompt.
 
-Reading uses drop-down answers. Replies in Part 1, diagram emails in Part 2, and comments in Part 4 keep their original paragraphs, with each answer selected inside the passage. Part 3 keeps the A–E paragraph choices. Selections save automatically and remain visible during review.
+Reading follows the [official interactive sample](https://instructionalproducts.paragontesting.ca/InstructionalProducts/FreeOnlineSampleTest/FOST/View/43cc4771-b071-4c82-927a-3a75c7c36e35): click the small arrow inside a blank to open the answer choices. Your selection becomes bold, underlined text in the sentence, and the paragraph reflows around it. Click the selected text to change it. Replies in Part 1, diagram emails in Part 2, and comments in Part 4 keep their original paragraphs. Other questions appear as sentence rows in a shared answer panel; Part 3 keeps the A–E paragraph choices. Arrow keys and Enter also work. Selections save automatically and remain visible during review.
 
 Speaking prompts also recover the original paragraphs, line breaks, options and pictures for every task type. Source-page fonts and large empty gaps are normalized, pictures appear alongside their instructions without duplication, and the preparation/recording controls stay visible while scrolling.
 

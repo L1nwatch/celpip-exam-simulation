@@ -1929,15 +1929,13 @@ function readingSelectHtml(question) {
   const checked = state.checked[question.key];
   const selected = question.options.find((option) => saved === option.id || saved === option.value);
   const grade = submitted && checked !== undefined ? checked ? "correct" : "wrong" : "";
-  const paragraphChoice = question.options.every((option) => /^[A-E]$/.test((option.text || "").trim()));
-  return `<select class="reading-select ${paragraphChoice ? "reading-paragraph-choice" : ""} ${grade}"
-    data-reading-key="${escapeHtml(question.key)}" aria-label="Question ${questionNumber(question)}"
-    ${selected ? `title="${escapeHtml(selected.text)}"` : ""}
-    ${grade === "wrong" ? 'aria-invalid="true"' : ""} ${submitted ? "disabled" : ""}>
-    <option value="">${questionNumber(question)}. Select...</option>
-    ${question.options.map((option) => `<option value="${escapeHtml(option.id)}"
-      ${selected === option ? "selected" : ""}>${escapeHtml(option.text || option.label)}</option>`).join("")}
-  </select>`;
+  return `<span class="reading-select ${selected ? "has-answer" : ""} ${grade}" role="combobox"
+    tabindex="${submitted ? -1 : 0}" aria-haspopup="listbox" aria-expanded="false"
+    aria-controls="readingAnswerOptions" aria-disabled="${submitted}"
+    data-reading-key="${escapeHtml(question.key)}" data-value="${escapeHtml(selected?.id || "")}"
+    aria-label="Question ${questionNumber(question)}: ${escapeHtml(selected?.text || "Choose an answer")}"
+    ${grade === "wrong" ? 'aria-invalid="true"' : ""}>
+    <span class="reading-answer-text">${selected ? escapeHtml(selected.text || selected.label) : ""}</span><span class="reading-answer-arrow" aria-hidden="true">▾</span></span>`;
 }
 
 function fillReadingPassage(html, questions) {
@@ -1954,11 +1952,12 @@ function fillReadingPassage(html, questions) {
     matches.forEach((match) => {
       const question = byNumber.get(Number(match[1]));
       if (!question) return;
-      fragment.append(node.textContent.slice(offset, match.index));
+      const prefix = node.textContent.slice(offset, match.index);
+      fragment.append(prefix, /\S$/.test(prefix) ? " " : "");
       const blank = doc.createElement("span");
       blank.className = "reading-blank";
       blank.innerHTML = readingSelectHtml(question);
-      fragment.append(blank);
+      fragment.append(`${questionNumber(question)}. `, blank);
       offset = match.index + match[0].length;
     });
     fragment.append(node.textContent.slice(offset));
@@ -1970,50 +1969,170 @@ function fillReadingPassage(html, questions) {
 function renderReadingQuestion(question) {
   const submitted = Boolean(state.submissions.reading);
   const number = Number(question.number);
-  const text = (question.question_text || "")
-    .replace(new RegExp(`^(?:Question\\s+)?${number}[.)]?\\s+`, "i"), "");
+  const matching = /^_{2,}\s*[-–]?/.test(question.question_text || "");
+  const text = matching ? question.question_text : `${number}. ${(question.question_text || "")
+    .replace(new RegExp(`^(?:Question\\s+)?${number}[.)]?\\s+`, "i"), "")}`;
   let stem = fillReadingPassage(`<span>${escapeHtml(text)}</span>`, [question]);
   if (!stem.includes("data-reading-key=")) {
     if (/_{2,}/.test(text)) stem = escapeHtml(text).replace(/_{2,}/, () => readingSelectHtml(question));
     else stem = `${escapeHtml(text)} ${readingSelectHtml(question)}`;
   }
   return `<section class="question-card reading-question ${submitted ? "review-card" : ""}" data-key="${escapeHtml(question.key)}">
-    <h2>Question ${questionNumber(question)}</h2>
     <div class="reading-question-stem">${stem}</div>
     ${submitted ? questionFeedback(question) + reviewNoteHtml(question) : ""}
   </section>`;
 }
 
 function renderReadingQuestionSet(group, layout) {
+  stopSpeakingTask();
   const passages = layout?.passages || [];
   const embedded = new Set(passages.flatMap((passage) => passage.keys));
+  const blocks = [];
+  let rows = [];
+  const flushRows = () => {
+    if (rows.length) blocks.push(`<div class="reading-question-list">${rows.join("")}</div>`);
+    rows = [];
+  };
   $("mediaArea").innerHTML = "";
-  $("answerArea").innerHTML = group.questions.map((question) => {
+  group.questions.forEach((question) => {
     const passage = passages.find((item) => item.keys[0] === question.key);
     if (passage) {
       const questions = passage.keys.map((key) => group.questions.find((item) => item.key === key));
-      return `<section class="reading-passage" aria-label="Complete the message">
+      flushRows();
+      blocks.push(`<section class="reading-passage" aria-label="Complete the message">
         <p class="reading-passage-instruction">${escapeHtml(passage.instruction)}</p>
         <div class="reading-passage-body">${fillReadingPassage(passage.html, questions)}</div>
       </section>${state.submissions.reading ? questions.map((item) => `<section
         class="question-card review-card" data-key="${escapeHtml(item.key)}">
-        <h2>Question ${questionNumber(item)}</h2>${questionFeedback(item)}${reviewNoteHtml(item)}</section>`).join("") : ""}`;
+        <h2>Question ${questionNumber(item)}</h2>${questionFeedback(item)}${reviewNoteHtml(item)}</section>`).join("") : ""}`);
     }
-    return embedded.has(question.key) ? "" : renderQuestionCard(question);
-  }).join("");
-  $("answerArea").querySelectorAll(".reading-select").forEach((select) => {
-    select.addEventListener("change", () => {
-      if (state.submissions.reading) return;
-      if (select.value) state.answers[select.dataset.readingKey] = select.value;
-      else delete state.answers[select.dataset.readingKey];
-      select.title = select.selectedOptions[0]?.textContent || "";
-      persist();
-      renderStats();
-      $("nextBtn").disabled = !isMockActive() && group.questions.some((question) => !state.answers[question.key]);
-    });
+    if (!embedded.has(question.key)) rows.push(renderQuestionCard(question));
   });
+  flushRows();
+  $("answerArea").innerHTML = blocks.join("");
+  bindReadingAnswerMenus(group);
   group.questions.forEach(bindQuestionCard);
   $("feedback").hidden = true;
+}
+
+function bindReadingAnswerMenus(group) {
+  const menu = document.createElement("div");
+  menu.id = "readingAnswerOptions";
+  menu.className = "reading-answer-menu";
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  document.body.append(menu);
+  let active = null;
+  const close = () => {
+    active?.control.setAttribute("aria-expanded", "false");
+    active?.control.removeAttribute("aria-activedescendant");
+    active = null;
+    menu.hidden = true;
+  };
+  const highlight = (index, scroll = true) => {
+    active.index = (index + active.question.options.length) % active.question.options.length;
+    Array.from(menu.children).forEach((option, position) => {
+      option.classList.toggle("is-active", position === active.index);
+    });
+    const option = menu.children[active.index];
+    active.control.setAttribute("aria-activedescendant", option.id);
+    if (scroll) option.scrollIntoView({block: "nearest"});
+  };
+  const positionMenu = () => {
+    if (!active) return false;
+    const control = active.control;
+    const rect = Array.from(control.getClientRects()).reverse()
+      .find((item) => item.top >= 0 && item.bottom <= window.innerHeight) || control.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) { close(); return false; }
+    menu.style.width = `${Math.min(520, Math.max(260, rect.width), window.innerWidth - 24)}px`;
+    const below = window.innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const upwards = below < Math.min(menu.scrollHeight, 260) && above > below;
+    menu.style.maxHeight = `${Math.max(80, upwards ? above : below)}px`;
+    menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 12))}px`;
+    menu.style.top = `${Math.max(12, upwards ? rect.top - menu.offsetHeight - 6 : rect.bottom + 6)}px`;
+    return true;
+  };
+  const open = (control, question) => {
+    if (state.submissions.reading) return;
+    if (active?.control === control) { close(); return; }
+    close();
+    const saved = state.answers[question.key];
+    const selected = question.options.findIndex((option) => saved === option.id || saved === option.value);
+    active = {control, question, index: Math.max(0, selected)};
+    menu.setAttribute("aria-label", `Answers for Question ${questionNumber(question)}`);
+    menu.innerHTML = question.options.map((option, index) => `<div role="option"
+      id="readingAnswerOption${index}" class="reading-answer-choice" data-reading-option="${index}"
+      data-option-id="${escapeHtml(option.id)}" aria-selected="${index === selected}">
+      <span class="reading-choice-circle" aria-hidden="true"></span><span>${escapeHtml(option.text || option.label)}</span>
+    </div>`).join("");
+    menu.hidden = false;
+    if (!positionMenu()) return;
+    control.setAttribute("aria-expanded", "true");
+    control.focus({preventScroll: true});
+    highlight(active.index);
+  };
+  const choose = () => {
+    if (!active || state.submissions.reading) return;
+    const {control, question, index} = active;
+    const option = question.options[index];
+    state.answers[question.key] = option.id;
+    control.dataset.value = option.id;
+    control.classList.add("has-answer");
+    control.querySelector(".reading-answer-text").textContent = option.text || option.label;
+    control.setAttribute("aria-label", `Question ${questionNumber(question)}: ${option.text || option.label}`);
+    close();
+    control.focus({preventScroll: true});
+    persist();
+    renderStats();
+    $("nextBtn").disabled = !isMockActive() && group.questions.some((question) => !state.answers[question.key]);
+  };
+  $("answerArea").querySelectorAll(".reading-select").forEach((control) => {
+    const question = group.questions.find((item) => item.key === control.dataset.readingKey);
+    control.addEventListener("click", () => open(control, question));
+    control.addEventListener("keydown", (event) => {
+      if (state.submissions.reading) return;
+      const expanded = active?.control === control;
+      if (["Enter", " ", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        if (!expanded) {
+          open(control, question);
+          if (active && event.key === "Home") highlight(0);
+          if (active && event.key === "End") highlight(question.options.length - 1);
+        } else if (event.key === "Enter" || event.key === " ") choose();
+        else if (event.key === "Home") highlight(0);
+        else if (event.key === "End") highlight(question.options.length - 1);
+        else highlight(active.index + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Escape" || event.key === "Tab") {
+        if (expanded && event.key === "Escape") event.preventDefault();
+        close();
+      }
+    });
+  });
+  menu.addEventListener("pointermove", (event) => {
+    const option = event.target.closest("[data-reading-option]");
+    if (active && option) highlight(Number(option.dataset.readingOption), false);
+  });
+  menu.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-reading-option]");
+    if (active && option) { highlight(Number(option.dataset.readingOption), false); choose(); }
+  });
+  const outside = (event) => {
+    if (active && !active.control.contains(event.target) && !menu.contains(event.target)) close();
+  };
+  const scroll = (event) => {
+    if (!(event.target instanceof Node) || !menu.contains(event.target)) positionMenu();
+  };
+  document.addEventListener("pointerdown", outside);
+  window.addEventListener("scroll", scroll, true);
+  window.addEventListener("resize", close);
+  state.practiceCleanup = () => {
+    close();
+    menu.remove();
+    document.removeEventListener("pointerdown", outside);
+    window.removeEventListener("scroll", scroll, true);
+    window.removeEventListener("resize", close);
+  };
 }
 
 function renderQuestionCard(q, strictListening = false) {

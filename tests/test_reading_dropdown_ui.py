@@ -11,8 +11,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,10 +119,18 @@ class ReadingDropdownUiTests(unittest.TestCase):
         WebDriverWait(self.driver, 10).until(lambda d: len(d.find_elements(
             "css selector", ".reading-select")) == len(self.groups[part - 1]["question_keys"]))
 
+    def open_answers(self, key):
+        control = self.driver.find_element("css selector", f'[data-reading-key="{key}"]')
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", control)
+        if control.get_attribute("aria-expanded") != "true":
+            control.click()
+        WebDriverWait(self.driver, 5).until(lambda d: d.find_element("id", "readingAnswerOptions").is_displayed())
+        return control
+
     def choose(self, key, option=1):
-        select = self.driver.find_element("css selector", f'[data-reading-key="{key}"]')
-        Select(select).select_by_value(f"{key}-o{option}" if option else "")
-        return select
+        control = self.open_answers(key)
+        self.driver.find_element("css selector", f'[role="option"][data-option-id="{key}-o{option}"]').click()
+        return control
 
     def test_diagram_email_is_one_passage_with_inline_dropdowns(self):
         self.assertEqual(5, len(self.driver.find_elements("css selector", ".reading-passage .reading-select")))
@@ -130,7 +139,9 @@ class ReadingDropdownUiTests(unittest.TestCase):
         self.assertTrue(self.driver.find_elements("css selector", "#sourceContent img"))
         self.assertNotIn("Hi Morgan", self.driver.find_element("id", "sourceContent").text)
         self.assertIn("Hi Morgan", self.driver.find_element("css selector", ".reading-passage-body").text)
-        self.assertEqual(4, len(Select(self.driver.find_element("css selector", ".reading-select")).options) - 1)
+        self.open_answers("reading-2-1")
+        self.assertEqual(4, len(self.driver.find_elements("css selector", '[role="option"]')))
+        self.assertFalse(self.driver.find_elements("css selector", "#answerArea select"))
 
     def test_answers_persist_without_replacing_the_paragraph_and_enable_next(self):
         passage = self.driver.find_element("css selector", ".reading-passage-body")
@@ -141,11 +152,11 @@ class ReadingDropdownUiTests(unittest.TestCase):
         self.assertTrue(self.driver.find_element("id", "nextBtn").is_enabled())
         self.driver.refresh()
         WebDriverWait(self.driver, 10).until(lambda d: d.find_elements("css selector", ".reading-passage"))
-        self.assertEqual("reading-2-1-o1", self.driver.find_element("css selector", ".reading-select").get_attribute("value"))
-        self.choose("reading-2-1", 0)
-        self.assertFalse(self.driver.find_element("id", "nextBtn").is_enabled())
+        self.assertEqual("reading-2-1-o1", self.driver.find_element("css selector", ".reading-select").get_attribute("data-value"))
+        self.choose("reading-2-1", 2)
+        self.assertTrue(self.driver.find_element("id", "nextBtn").is_enabled())
         answers = json.loads(self.driver.execute_script("return localStorage.getItem('celpip-practice:local_celpip1_test1')"))
-        self.assertNotIn("reading-2-1", answers)
+        self.assertEqual("reading-2-1-o2", answers["reading-2-1"])
 
     def test_correspondence_and_viewpoints_keep_source_and_reply_separate(self):
         for part in (1, 4):
@@ -158,8 +169,9 @@ class ReadingDropdownUiTests(unittest.TestCase):
 
     def test_information_matching_keeps_all_five_paragraph_options(self):
         self.open_part(3)
-        options = Select(self.driver.find_element("css selector", ".reading-select")).options
-        self.assertEqual(list("ABCDE"), [option.text for option in options[1:]])
+        self.open_answers("reading-3-1")
+        options = self.driver.find_elements("css selector", '[role="option"]')
+        self.assertEqual(list("ABCDE"), [option.text for option in options])
         self.assertIn("Select E if the information is not given", self.driver.find_element("id", "questionText").text)
         self.choose("reading-3-1", 5)
         self.assertEqual("reading-3-1-o5", self.driver.execute_script("return state.answers['reading-3-1']"))
@@ -173,7 +185,7 @@ class ReadingDropdownUiTests(unittest.TestCase):
         WebDriverWait(self.driver, 5).until(lambda d: d.execute_script(
             "return state.submissions.reading?.correct === 38"))
         self.assertEqual(38, self.driver.execute_script("return state.submissions.reading.total"))
-        WebDriverWait(self.driver, 5).until(lambda d: all(not select.is_enabled()
+        WebDriverWait(self.driver, 5).until(lambda d: all(select.get_attribute("aria-disabled") == "true"
             for select in d.find_elements("css selector", ".reading-select")))
 
     def test_unwrapped_diagram_email_paragraphs_are_kept_together(self):
@@ -219,8 +231,10 @@ class ReadingDropdownUiTests(unittest.TestCase):
         """)
         self.assertIsNone(error)
         selects = self.driver.find_elements("css selector", ".reading-select")
-        self.assertTrue(all(not select.is_enabled() for select in selects))
-        self.assertEqual("reading-2-1-o2", selects[0].get_attribute("value"))
+        self.assertTrue(all(select.get_attribute("aria-disabled") == "true" for select in selects))
+        self.assertEqual("reading-2-1-o2", selects[0].get_attribute("data-value"))
+        selects[0].click()
+        self.assertFalse(self.driver.find_element("id", "readingAnswerOptions").is_displayed())
         card = self.driver.find_element("css selector", '[data-key="reading-2-1"]')
         self.assertNotIn("Correct answer:", card.text)
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", card)
@@ -249,6 +263,48 @@ class ReadingDropdownUiTests(unittest.TestCase):
                         s.getBoundingClientRect().width <= s.closest('.reading-passage, .reading-question').clientWidth);
                 """))
         self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+
+    def test_selected_answer_reflows_as_text_and_keeps_the_blank_number(self):
+        long_answer = "the practical workshop for students and their families on Saturday afternoon"
+        self.driver.execute_script("state.data.questions.find(q => q.key === 'reading-2-1').options[0].text = arguments[0]", long_answer)
+        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": 390, "height": 1000, "deviceScaleFactor": 1, "mobile": False})
+        try:
+            control = self.choose("reading-2-1")
+            self.assertEqual(long_answer, control.text)
+            self.assertEqual("inline", control.value_of_css_property("display"))
+            self.assertEqual("700", control.value_of_css_property("font-weight"))
+            self.assertGreater(self.driver.execute_script("return arguments[0].getClientRects().length", control), 1)
+            self.assertIn("1.", self.driver.find_element("css selector", ".reading-passage-body").text)
+            self.assertEqual("false", control.get_attribute("aria-expanded"))
+        finally:
+            self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+
+    def test_keyboard_selects_answers_and_escape_dismisses_without_changes(self):
+        control = self.driver.find_element("css selector", '[data-reading-key="reading-2-1"]')
+        control.send_keys(Keys.ARROW_DOWN)
+        self.assertEqual("true", control.get_attribute("aria-expanded"))
+        control.send_keys(Keys.ARROW_DOWN, Keys.ENTER)
+        self.assertEqual("reading-2-1-o2", control.get_attribute("data-value"))
+        self.assertEqual(control, self.driver.switch_to.active_element)
+        control.send_keys(Keys.ENTER, Keys.ARROW_DOWN, Keys.ESCAPE)
+        self.assertEqual("reading-2-1-o2", control.get_attribute("data-value"))
+        self.assertEqual("false", control.get_attribute("aria-expanded"))
+
+    def test_answer_menu_stays_on_screen_and_is_removed_when_leaving_reading(self):
+        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": 390, "height": 1000, "deviceScaleFactor": 1, "mobile": False})
+        try:
+            self.open_answers("reading-2-1")
+            self.assertTrue(self.driver.execute_script("""
+                const r = document.getElementById('readingAnswerOptions').getBoundingClientRect();
+                return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+            """))
+            self.driver.find_element("id", "overviewBtn").click()
+            WebDriverWait(self.driver, 5).until(lambda d: d.find_element("id", "overviewView").is_displayed())
+            self.assertFalse(self.driver.find_elements("id", "readingAnswerOptions"))
+        finally:
+            self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
 
 
 if __name__ == "__main__":
