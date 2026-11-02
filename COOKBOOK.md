@@ -47,6 +47,22 @@ Use `.env.example` as the public template and `.env` only for local secrets/conf
 
 ## Materials
 
+After installing additional private packs, generate the private catalog:
+
+```bash
+uv run python scripts/build_material_catalog.py
+```
+
+The app loads `materials/private/packs/catalog.json` before resolving test links.
+Counts come from each pack's questions; unavailable sections and four-skill mock
+exams are omitted for Listening-only packs. Keep this catalog and all imported
+questions/PDFs out of Git and the public preview. Preserve publisher attribution.
+`scripts/import_celpass_listening.py` accepts manually saved visible source data,
+browser recording metadata, and the unchanged personal-practice PDF. It validates
+all 38 answers and 27 original-source recording references before creating a new
+pack; it never replaces an existing pack or generates content. Streaming audio
+uses the stable source endpoint, not expiring redirected URLs.
+
 Convert legacy `output/local_celpip*` snapshots into compact private packs:
 
 ```bash

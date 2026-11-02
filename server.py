@@ -924,8 +924,12 @@ def save_review(payload):
     section = payload.get("section")
     page = payload.get("page")
     reviewed = payload.get("reviewed")
-    if not isinstance(test_id, str) or not re.fullmatch(r"local_celpip(?:[1-9]|1[0-3])_test[12]", test_id):
+    if not isinstance(test_id, str) or not re.fullmatch(r"local_[a-z0-9]+(?:_[a-z0-9]+)*", test_id) or len(test_id) > 100:
         raise ValueError("Invalid test_id")
+    legacy = re.fullmatch(r"local_celpip(?:[1-9]|1[0-3])_test[12]", test_id)
+    pack = (MATERIALS_DIR / test_id).resolve()
+    if not legacy and (not pack.is_relative_to(MATERIALS_DIR.resolve()) or not (pack / "questions.json").is_file()):
+        raise ValueError("Unknown material pack")
     if section not in ("listening", "reading", "writing", "speaking"):
         raise ValueError("Invalid section")
     if not isinstance(page, str) or not page.strip() or len(page) > 1024:

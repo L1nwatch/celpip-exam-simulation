@@ -120,6 +120,19 @@ class ServerPersistenceTests(unittest.TestCase):
                 server.save_review(payload)
         self.assertEqual([], server.saved_reviews())
 
+    def test_reviews_accept_installed_additional_listening_packs(self):
+        materials = self.root / "materials"
+        pack = materials / "local_celpass_listening26"
+        pack.mkdir(parents=True)
+        (pack / "questions.json").write_text('{"questions":[]}')
+        review = {"test_id": pack.name, "section": "listening", "page": "pages/listening/part-1.html", "reviewed": True}
+        with mock.patch.object(server, "MATERIALS_DIR", materials):
+            server.save_review(review)
+            self.assertEqual(pack.name, server.saved_reviews()[0]["test_id"])
+            for invalid in ("local_celpass_missing", "local_../../outside", "local_" + "x" * 101):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    server.save_review({**review, "test_id": invalid})
+
     def test_review_http_endpoints(self):
         handler = server.Handler.__new__(server.Handler)
         handler.path = "/api/reviews"

@@ -10,6 +10,32 @@ const MATERIAL_ROOT = "../materials/private/packs";
 const SERVER_API_ENABLED = true;
 const SPEAKING_START_CUE_URL = "assets/audio/start-speaking-now-natural.mp3";
 
+async function loadMaterialCatalog() {
+  if (!SERVER_API_ENABLED) return;
+  try {
+    const response = await fetch(`${MATERIAL_ROOT}/catalog.json`, {cache: "no-store"});
+    if (!response.ok) return;
+    const catalog = await response.json();
+    if (!Array.isArray(catalog.tests)) return;
+    for (const item of catalog.tests) {
+      if (!/^local_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(item?.id || "") || item.id.length > 100
+        || typeof item.label !== "string" || !item.label.trim() || !item.sections
+        || !SECTIONS.every(({id}) => Number.isInteger(item.sections[id]) && item.sections[id] >= 0)
+        || !SECTIONS.some(({id}) => item.sections[id] > 0)) continue;
+      const entry = {id: item.id, label: item.label, sections: item.sections};
+      const existing = TESTS.findIndex((test) => test.id === entry.id);
+      if (existing >= 0) TESTS[existing] = entry;
+      else TESTS.push(entry);
+    }
+  } catch (error) {
+    console.warn("Additional material catalog could not be loaded.", error);
+  }
+}
+
+function testHasSection(test, section) {
+  return !test?.sections || test.sections[section] > 0;
+}
+
 const SECTIONS = [
   { id: "listening", label: "Listening", minutes: 47 },
   { id: "reading", label: "Reading", minutes: 55 },
@@ -148,6 +174,10 @@ function persistMockExam() {
 }
 
 async function openMockExam(testId, fresh = false, reviewSection = null, reviewPart = 0) {
+  const test = TESTS.find((item) => item.id === testId);
+  if (test && !SECTIONS.every(({id}) => testHasSection(test, id))) {
+    throw new Error("This material pack offers section practice only.");
+  }
   stopSpeakingTask();
   stopTimer();
   stopPracticePlayback();
@@ -432,6 +462,7 @@ async function toggleReviewed() {
 
 function assetUrl(path) {
   if (!path) return "";
+  if (path.startsWith("https://")) return path;
   return materialUrl(state.testId, path);
 }
 
@@ -615,6 +646,7 @@ function questionNumber(q, i = state.index) {
 }
 
 async function init() {
+  await loadMaterialCatalog();
   $("prevBtn").addEventListener("click", () => moveQuestion(-1));
   $("nextBtn").addEventListener("click", handleNext);
   $("submitSectionBtn").addEventListener("click", submitSection);
@@ -662,6 +694,11 @@ async function loadTest() {
   const response = await fetch(sourceUrl("questions.json"));
   if (!response.ok) throw new Error("Could not load this test's questions. Please retry.");
   state.data = await response.json();
+  if (!state.attemptReview && !state.exam && !state.data.questions.some((q) => q.section === state.section)) {
+    state.section = SECTIONS.find(({id}) => state.data.questions.some((q) => q.section === id))?.id || state.section;
+    state.index = 0;
+    state.sectionIntro = isIntroSection(state.section);
+  }
   // Keep groups and section-level responses on the same question objects.
   state.data.questions_by_key = Object.fromEntries(state.data.questions.map((question) => [question.key, question]));
   if (state.attemptReview) {
@@ -921,6 +958,7 @@ async function showOverview() {
       submissions: mergeSubmissions(databaseDraft.submissions, localDraft.submissions),
     };
     const cells = SECTIONS.map((section) => {
+      if (!testHasSection(test, section.id)) return '<td class="unavailable-section">Not included</td>';
       const attempt = latest.get(`${test.id}:${section.id}`);
       const mockSubmission = mock?.status === "completed" ? mock.submissions[section.id] : null;
       const practiceSubmission = draft.submissions[section.id];
@@ -963,13 +1001,14 @@ async function showOverview() {
     const mockDetail = mock?.status === "active"
       ? `Continue ${SECTIONS.find(({ id }) => id === mock.section)?.label || "Listening"}`
       : "Listening → Reading → Writing → Speaking";
-    const mockCell = `<td class="mock-exam-cell">
+    const mockCell = !SECTIONS.every(({id}) => testHasSection(test, id))
+      ? '<td class="mock-exam-cell">Section practice</td>' : `<td class="mock-exam-cell">
       <button class="status-button mock-start" data-mock-test="${test.id}" type="button"><span>${mockLabel}</span><small>${mockDetail}</small></button>
     </td>`;
     return `<tr><td class="test-name">${escapeHtml(test.label)}</td>${cells}${mockCell}</tr>`;
   }).join("");
 
-  const total = TESTS.length * SECTIONS.length;
+  const total = TESTS.reduce((count, test) => count + SECTIONS.filter(({id}) => testHasSection(test, id)).length, 0);
   $("overviewSummary").textContent = `${completed} completed · ${inProgress} in progress · ${total - completed - inProgress} not started`;
   $("overviewBody").querySelectorAll("button[data-test]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1064,7 +1103,7 @@ async function syncDraftToDatabase(testId = state.testId) {
 function renderSections() {
   $("sectionTabs").innerHTML = SECTIONS.map((section) => {
     const total = state.data.sections?.[section.id] || 0;
-    return `<button class="section-tab ${section.id === state.section ? "active" : ""}" data-section="${section.id}" ${isMockActive() ? "disabled" : ""}>
+    return `<button class="section-tab ${section.id === state.section ? "active" : ""}" data-section="${section.id}" ${isMockActive() || !total ? "disabled" : ""}>
       ${section.label}<small>${total} tasks</small>
     </button>`;
   }).join("");
@@ -1120,6 +1159,12 @@ async function render() {
   const instruction = partInstruction(group);
   $("questionText").textContent = showSectionIntro ? "" : instruction;
   $("questionText").hidden = showSectionIntro || !instruction;
+  const attribution = $("materialAttribution");
+  if (attribution) {
+    const source = state.data.source;
+    attribution.hidden = !source?.url?.startsWith("https://");
+    attribution.innerHTML = attribution.hidden ? "" : `<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.label || "Practice source")}</a>${source.note ? ` · ${escapeHtml(source.note)}` : ""}`;
+  }
   renderQuestionNav(groups);
   $("questionNav").hidden = showSectionIntro;
   renderReviewControl();

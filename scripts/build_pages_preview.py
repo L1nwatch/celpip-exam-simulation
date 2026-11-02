@@ -37,6 +37,7 @@ INDEX_HTML = """<!doctype html>
 
 
 def public_app_js(source: str) -> str:
+    source = re.sub(r"async function loadMaterialCatalog\(\) \{[\s\S]+?\n\}\n", "async function loadMaterialCatalog() {}\n", source, count=1)
     source = re.sub(
         r"const TESTS = Array\.from\(\{ length: 13 \}[\s\S]+?\}\)\.flat\(\);\n\n"
         r"const MATERIAL_ROOT = \"\.\./materials/private/packs\";\n"
@@ -48,6 +49,7 @@ def public_app_js(source: str) -> str:
     source = source.replace(
         """function assetUrl(path) {
   if (!path) return "";
+  if (path.startsWith("https://")) return path;
   return materialUrl(state.testId, path);
 }
 
@@ -60,6 +62,7 @@ function materialUrl(testId, path) {
 }""",
         """function assetUrl(path) {
   if (!path) return "";
+  if (path.startsWith("https://")) return path;
   return `../output/${state.testId}/${path}`;
 }
 

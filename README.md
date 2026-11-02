@@ -91,6 +91,8 @@ materials/private/packs/<test_id>/
   video/
 ```
 
+Additional installed packs can provide Listening alone. They appear alongside the existing tests, with only their included sections available. Imported exercises retain the original publisher's questions and answer key, and link to their source. Some publishers provide streaming audio; those packs need internet access. An audio-only discussion in Part 5 is identified in the source note.
+
 Public fake demo material lives at:
 
 ```text
