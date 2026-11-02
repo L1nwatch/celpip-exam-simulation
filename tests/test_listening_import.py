@@ -10,10 +10,10 @@ from build_material_catalog import build_catalog
 from import_celpass_listening import COUNTS, convert
 
 
-def source_fixture():
+def source_fixture(counts=COUNTS):
     sections, answers, media = [], [], []
     number = 0
-    for index, count in enumerate(COUNTS):
+    for index, count in enumerate(counts):
         main = f"/api/public/sample-audio/fixture-part-{index}.m4a"
         media.append({"path": main, "duration": 60, "error": 0})
         questions = []
@@ -40,7 +40,11 @@ class ListeningImportTests(unittest.TestCase):
         self.destination = self.root / "packs" / "local_celpass_listening26"
 
     def test_import_preserves_published_answers_audio_and_source(self):
-        data = convert(source_fixture(), self.pdf, self.destination)
+        source = source_fixture()
+        source["sections"][0]["questions"][1]["options"][0]["media"] = [{"type": "image",
+            "path": "/celpip-sample-tests/fake-fixture.webp", "alt": "Picture A", "loaded": True,
+            "width": 480, "height": 480}]
+        data = convert(source, self.pdf, self.destination)
         self.assertEqual(list(COUNTS), [len(g["question_keys"]) for g in data["question_groups"]["listening"]])
         self.assertEqual(38, len(data["questions"]))
         self.assertEqual(19, sum(bool(q["media"]) for q in data["questions"]))
@@ -52,6 +56,7 @@ class ListeningImportTests(unittest.TestCase):
         self.assertIn("CELPass", (self.destination / "pages/listening/part-1.html").read_text())
         catalog = build_catalog(self.destination.parent)
         self.assertEqual(data["sections"], catalog["tests"][0]["sections"])
+        self.assertEqual("https://celpass.com/celpip-sample-tests/fake-fixture.webp", data["questions"][1]["options"][0]["media"][0]["path"])
         self.assertNotIn("questions", catalog["tests"][0])
         with self.assertRaisesRegex(ValueError, "already exists"):
             convert(source_fixture(), self.pdf, self.destination)
@@ -65,7 +70,21 @@ class ListeningImportTests(unittest.TestCase):
         broken["answerHtml"] = broken["answerHtml"].replace("B. Choice B for 1", "B. Wrong answer", 1)
         with self.assertRaisesRegex(ValueError, "does not match"):
             convert(broken, self.pdf, self.destination)
+        broken = source_fixture()
+        broken["sections"][0]["questions"][0]["options"][0]["media"] = [{"type": "image", "path": "https://example.com/unverified.webp"}]
+        with self.assertRaisesRegex(ValueError, "option image"):
+            convert(broken, self.pdf, self.destination)
         self.assertFalse(self.destination.exists())
+
+    def test_problem_solving_preserves_different_eight_question_splits(self):
+        for split in ((3, 2, 3), (3, 3, 2)):
+            with self.subTest(split=split):
+                destination = self.root / "packs" / ("local_fixture_" + "".join(map(str, split)))
+                data = convert(source_fixture(split + COUNTS[3:]), self.pdf, destination)
+                self.assertEqual(list(split), [len(g["question_keys"]) for g in data["question_groups"]["listening"][:3]])
+                self.assertEqual(38, len(data["questions"]))
+        with self.assertRaisesRegex(ValueError, "38 questions"):
+            convert(source_fixture((2, 2, 3) + COUNTS[3:]), self.pdf, self.destination)
 
     def test_catalog_counts_actual_questions_and_ignores_invalid_pack_names(self):
         convert(source_fixture(), self.pdf, self.destination)

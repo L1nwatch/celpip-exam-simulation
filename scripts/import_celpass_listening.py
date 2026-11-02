@@ -34,6 +34,19 @@ def audio_url(path):
     return url
 
 
+def checked_option_images(option):
+    images = []
+    for image in option.get("media", []):
+        url = urljoin("https://celpass.com", image.get("path", ""))
+        parsed = urlsplit(url)
+        if (image.get("type") != "image" or parsed.scheme != "https" or parsed.netloc != "celpass.com"
+                or not parsed.path.startswith("/celpip-sample-tests/") or parsed.query
+                or image.get("loaded") is not True or not image.get("width") or not image.get("height")):
+            raise ValueError("Source option image has not passed the browser loading check")
+        images.append({"type": "image", "path": url, "alt": image.get("alt") or option["text"]})
+    return images
+
+
 def convert(source, original_pdf, destination):
     if not re.fullmatch(r"local_[a-z0-9]+(?:_[a-z0-9]+)*", destination.name) or len(destination.name) > 100:
         raise ValueError("Invalid destination pack ID")
@@ -44,7 +57,8 @@ def convert(source, original_pdf, destination):
         raise ValueError("Unrecognized source page")
     number = int(number[1])
     groups = source.get("sections", [])
-    if tuple(len(g.get("questions", [])) for g in groups) != COUNTS:
+    counts = tuple(len(g.get("questions", [])) for g in groups)
+    if len(counts) != 8 or not all(counts[:3]) or sum(counts[:3]) != 8 or counts[3:] != COUNTS[3:]:
         raise ValueError("Expected eight recordings and 38 questions in CELPIP order")
     answer_rows = BeautifulSoup(source["answerHtml"], "html.parser").find_all("li")
     if len(answer_rows) != 38:
@@ -86,7 +100,7 @@ def convert(source, original_pdf, destination):
             keys.append(key)
             options = [{"id": f"{key}_{o['value']}", "value": f"{key}_{o['value']}",
                         "label": o["value"], "text": o["text"], "is_correct": i == correct_index,
-                        "media": []} for i, o in enumerate(q["options"])]
+                        "media": checked_option_images(o)} for i, o in enumerate(q["options"])]
             questions.append({"key": key, "id": key, "section": "listening", "number": local_number,
                               "source_question_number": source_number, "question_type": "multiple_choice_single",
                               "question_text": text, "options": options, "media": [checked_audio(q.get("questionAudio"))] if index < 5 else [],
