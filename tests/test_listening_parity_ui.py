@@ -58,11 +58,13 @@ class ListeningParityUiTests(unittest.TestCase):
                 key = f"listening-{index}-{number}"
                 keys.append(key)
                 images = [{"type": "image", "path": f"assets/images/demo-community-board.svg#{i}"} for i in range(4)] if index == 0 and number == 1 else []
+                question_audio = f"question-{index}-{number}.wav"
+                (pack / question_audio).write_bytes(fixture_wav(.7))
                 data["questions"].append({
                     "key": key, "number": number, "section": "listening", "question_type": "multiple_choice_single",
                     "question_text": f"Question {number} Listen to a short statement. You will hear it only once."
                     if index < 5 else f"{number}. The speakers recommend",
-                    "media": ([{"type": "audio", "path": "question.wav"}] + images) if index < 5 else [],
+                    "media": ([{"type": "audio", "path": question_audio}] + images) if index < 5 else [],
                     "options": [{"id": f"{key}-o{i}", "value": f"{key}-v{i}", "text": f"answer {i}",
                                  "is_correct": i == 1, "media": [images[i - 1]] if images else []} for i in range(1, 5)],
                     "source_pages": [{"file": page, "title": title}],
@@ -302,6 +304,104 @@ class ListeningParityUiTests(unittest.TestCase):
         self.driver.execute_script("window.oldPassage.dispatchEvent(new Event('ended'))")
         self.assertTrue(self.driver.find_element("id", "overviewView").is_displayed())
         self.assertTrue(self.driver.execute_script("return window.oldPassage.paused"))
+
+    def test_next_question_plays_from_complete_preload_with_network_offline(self):
+        self.wait(lambda d: d.execute_script("""
+            return [...practiceResources.assets.values()].some(e => e.url.endsWith('question-0-2.wav') && e.blobUrl);
+        """))
+        self.assertFalse(self.driver.find_elements("css selector", ".question-card"))
+        self.assertFalse(self.driver.execute_script("return state.listeningUnlocked.has(listeningUnlockKey(currentGroup()))"))
+        self.driver.execute_script("document.getElementById('partPassageMedia').dispatchEvent(new Event('ended'))")
+        self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+        try:
+            self.driver.execute_cdp_cmd("Network.enable", {})
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0})
+            self.driver.find_element("id", "nextListeningQuestion").click()
+            self.wait(lambda d: "Question 2" in d.find_element("id", "mediaArea").text)
+            self.assertTrue(self.driver.find_element("id", "listeningQuestionAudio").get_attribute("src").startswith("blob:"))
+            self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+            self.assertTrue(self.driver.execute_script("return state.timer.running"))
+            self.assertEqual({}, self.driver.execute_script("return state.answers"))
+        finally:
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1})
+
+    def test_external_preload_is_silent_and_reuses_the_buffered_player(self):
+        other = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(QuietHandler, directory=self.tmp.name))
+        thread = threading.Thread(target=other.serve_forever, daemon=True)
+        thread.start()
+        try:
+            self.driver.execute_script("""
+                stopPracticePlayback(); resetPracticeResources();
+                // Production publishers use HTTPS. This fixture's second origin
+                // is a plain local HTTP server with no CORS headers.
+                window.originalAssetUrl = assetUrl;
+                assetUrl = path => path.startsWith('http://') ? path : originalAssetUrl(path);
+                const group = state.data.question_groups.listening[1];
+                group.media = [{type:'audio', path:arguments[0]}];
+                render();
+            """, f"http://127.0.0.1:{other.server_port}/output/{TEST_ID}/main.wav")
+            self.wait(lambda d: d.execute_script("""
+                return [...practiceResources.assets.values()].some(e => e.player?.readyState >= 4);
+            """))
+            self.assertTrue(self.driver.execute_script("""
+                window.preparedPlayer = [...practiceResources.assets.values()].find(e => e.player)?.player;
+                return preparedPlayer.paused && preparedPlayer.currentTime === 0;
+            """))
+            self.driver.execute_script("preparedPlayer.dispatchEvent(new Event('ended'))")
+            self.assertEqual(0, self.driver.execute_script("return state.listeningUnlocked.size"))
+            self.show_group(1, unlocked=False)
+            self.assertTrue(self.driver.execute_script("return preparedPlayer === document.getElementById('partPassageMedia')"))
+            self.wait(lambda d: d.execute_script("return !preparedPlayer.paused && preparedPlayer.currentTime > 0"))
+        finally:
+            self.driver.execute_script("assetUrl = originalAssetUrl")
+            other.shutdown()
+            other.server_close()
+            thread.join()
+
+    def test_leaving_practice_aborts_speculative_load_and_releases_session_cache(self):
+        self.wait(lambda d: d.execute_script("return practiceResources.bytes > 0"))
+        self.driver.find_element("id", "overviewBtn").click()
+        self.assertEqual({"scope": "", "assets": 0, "bytes": 0}, self.driver.execute_script("""
+            return {scope:practiceResources.scope, assets:practiceResources.assets.size, bytes:practiceResources.bytes};
+        """))
+
+    def test_next_part_video_plays_offline_after_preloading(self):
+        self.show_group(5)
+        self.wait(lambda d: d.execute_script("""
+            return [...practiceResources.assets.values()].some(e => e.type === 'video' && e.blobUrl);
+        """))
+        try:
+            self.driver.execute_cdp_cmd("Network.enable", {})
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0})
+            self.driver.find_element("id", "nextListeningQuestion").click()
+            self.wait(lambda d: d.find_elements("css selector", "video#partPassageMedia"))
+            self.assertTrue(self.driver.find_element("id", "partPassageMedia").get_attribute("src").startswith("blob:"))
+            self.wait(lambda d: d.execute_script("return document.getElementById('partPassageMedia').currentTime > .1"))
+            self.assertFalse(self.driver.find_elements("css selector", ".question-card"))
+        finally:
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1})
+
+    def test_failed_speculative_request_does_not_block_normal_question_playback(self):
+        self.driver.execute_script("""
+            stopPracticePlayback(); resetPracticeResources();
+            const originalFetch = fetch;
+            window.fetch = (...args) => String(args[0]).endsWith('question-0-2.wav')
+                ? Promise.reject(new TypeError('Simulated preload connection failure')) : originalFetch(...args);
+            render();
+        """)
+        self.wait(lambda d: d.execute_script("""
+            return [...practiceResources.assets.values()].some(e => e.url.endsWith('question-0-2.wav') && e.finished && !e.ready);
+        """))
+        self.driver.execute_script("document.getElementById('partPassageMedia').dispatchEvent(new Event('ended'))")
+        self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+        self.driver.find_element("id", "nextListeningQuestion").click()
+        self.wait(lambda d: "Question 2" in d.find_element("id", "mediaArea").text)
+        self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+        self.assertTrue(self.driver.execute_script("return state.timer.running"))
 
 
 if __name__ == "__main__":

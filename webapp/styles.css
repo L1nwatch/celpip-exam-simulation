@@ -242,6 +242,12 @@ button:disabled {
   color: var(--warn);
 }
 
+.practice-preload-notice {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .overview-notice {
   min-height: 22px;
   margin: 14px 0 0;

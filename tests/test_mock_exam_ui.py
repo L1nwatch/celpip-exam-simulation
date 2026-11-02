@@ -343,7 +343,7 @@ class MockExamUiTests(unittest.TestCase):
             const question = state.data.questions.find(q => q.section === 'writing');
             delete question.question_html;
             const originalFetch = window.fetch;
-            window.fetch = async (...args) => args[0] === sourceUrl(question.source_file)
+            window.fetch = async (...args) => new URL(args[0], document.baseURI).href === new URL(sourceUrl(question.source_file), document.baseURI).href
                 ? new Response(`<main itemprop="articleBody"><p><strong>Read the information.</strong></p>
                     <p>A fictional workplace is asking for feedback.</p><p>&nbsp;</p>
                     <p>Write an email covering these points:</p><ul><li>Describe a problem.</li><li>Suggest a solution.</li></ul>

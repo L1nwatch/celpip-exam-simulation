@@ -119,6 +119,27 @@ class ReadingDropdownUiTests(unittest.TestCase):
         WebDriverWait(self.driver, 10).until(lambda d: len(d.find_elements(
             "css selector", ".reading-select")) == len(self.groups[part - 1]["question_keys"]))
 
+    def test_next_reading_source_opens_from_preload_with_network_offline(self):
+        self.open_part(1)
+        WebDriverWait(self.driver, 8).until(lambda d: d.execute_script("""
+            return [...practiceResources.assets.values()].some(e => e.url.endsWith('dropdown-part-2.html') && e.ready)
+                && [...practiceResources.assets.values()].some(e => e.type === 'image' && e.blobUrl);
+        """))
+        try:
+            self.driver.execute_cdp_cmd("Network.enable", {})
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": True, "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0})
+            self.driver.find_element("id", "nextBtn").click()
+            self.driver.switch_to.alert.accept()
+            WebDriverWait(self.driver, 5).until(lambda d: "Subject: Weekend workshops" in d.find_element("id", "answerArea").text)
+            image = self.driver.find_element("css selector", "#sourceContent img")
+            self.assertTrue(image.get_attribute("src").startswith("blob:"))
+            self.assertTrue(self.driver.execute_script("return arguments[0].complete && arguments[0].naturalWidth > 0", image))
+            self.assertEqual(8, len(self.driver.find_elements("css selector", ".reading-select")))
+        finally:
+            self.driver.execute_cdp_cmd("Network.emulateNetworkConditions", {
+                "offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1})
+
     def open_answers(self, key):
         control = self.driver.find_element("css selector", f'[data-reading-key="{key}"]')
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", control)

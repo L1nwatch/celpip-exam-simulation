@@ -124,6 +124,241 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+// Keep a small look-ahead in this tab. Local files become complete blobs so
+// switching questions does not depend on another request (including Range).
+// Publishers' cross-origin players are retained instead of fetching around CORS.
+const practiceResources = {
+  scope: "", assets: new Map(), pages: new Map(), queue: [], active: null,
+  bytes: 0, generation: 0, wanted: new Set(),
+};
+const PRACTICE_CACHE_LIMIT = 64 * 1024 * 1024;
+const PRACTICE_FILE_LIMIT = 24 * 1024 * 1024;
+
+function resetPracticeResources(scope = "") {
+  if (practiceResources.scope === scope) return;
+  practiceResources.generation++;
+  practiceResources.active?.abort();
+  for (const entry of practiceResources.assets.values()) {
+    if (entry.blobUrl) URL.revokeObjectURL(entry.blobUrl);
+    if (entry.player && !entry.player.isConnected) {
+      entry.player.pause();
+      entry.player.removeAttribute("src");
+      entry.player.load();
+    }
+    if (entry.image && !entry.image.isConnected) entry.image.removeAttribute("src");
+  }
+  Object.assign(practiceResources, {
+    scope, assets: new Map(), pages: new Map(), queue: [], active: null,
+    bytes: 0, wanted: new Set(),
+  });
+}
+
+function fetchSourcePage(page, signal) {
+  const url = new URL(sourceUrl(page), document.baseURI).href;
+  const pages = practiceResources.pages;
+  if (!pages.has(url)) {
+    const promise = fetch(url, {cache: "force-cache", signal}).then((response) => {
+      if (!response.ok) throw new Error("Source page unavailable");
+      return response.text();
+    }).catch((error) => {
+      if (pages.get(url) === promise) pages.delete(url);
+      throw error;
+    });
+    pages.set(url, promise);
+  }
+  return pages.get(url);
+}
+
+function mountPreparedMedia(root) {
+  root?.querySelectorAll("audio[src], video[src], img[src]").forEach((placeholder) => {
+    const entry = practiceResources.assets.get(new URL(placeholder.getAttribute("src"), document.baseURI).href);
+    if (entry?.blobUrl) placeholder.src = entry.blobUrl;
+    else if ((entry?.player || entry?.image) && (entry.player || entry.image) !== placeholder) {
+      const player = entry.player || entry.image;
+      for (const attribute of [...player.attributes]) {
+        if (attribute.name !== "src") player.removeAttribute(attribute.name);
+      }
+      for (const attribute of placeholder.attributes) {
+        if (attribute.name !== "src") player.setAttribute(attribute.name, attribute.value);
+      }
+      // Setting the same src attribute again can restart a buffered request.
+      placeholder.replaceWith(player);
+    }
+  });
+}
+
+async function preloadPracticeAsset(entry, signal) {
+  if (new URL(entry.url).origin !== location.origin && entry.type === "image") {
+    const image = new Image();
+    entry.image = image;
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        image.onload = image.onerror = null;
+        signal.removeEventListener("abort", finish);
+        entry.ready = image.complete && image.naturalWidth > 0;
+        resolve();
+      };
+      const timeout = setTimeout(finish, 15000);
+      signal.addEventListener("abort", finish, {once: true});
+      image.onload = image.onerror = finish;
+      image.src = entry.url;
+    });
+  }
+  if (new URL(entry.url).origin !== location.origin && ["audio", "video"].includes(entry.type)) {
+    const player = document.createElement(entry.type);
+    entry.player = player;
+    player.preload = "auto";
+    player.setAttribute("playsinline", "");
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        player.removeEventListener("canplaythrough", finish);
+        player.removeEventListener("error", finish);
+        signal.removeEventListener("abort", finish);
+        // This is a preload hint; mobile browsers may only buffer part of it.
+        entry.ready = player.readyState >= 4 && !player.error;
+        resolve();
+      };
+      const timeout = setTimeout(finish, 15000);
+      signal.addEventListener("abort", finish, {once: true});
+      player.addEventListener("canplaythrough", finish);
+      player.addEventListener("error", finish);
+      player.src = entry.url;
+      player.load();
+    });
+  }
+  const response = await fetch(entry.url, {cache: "force-cache", signal, priority: "low"});
+  if (!response.ok || response.status === 206) throw new Error("Incomplete preload");
+  const available = Math.min(PRACTICE_FILE_LIMIT, PRACTICE_CACHE_LIMIT - practiceResources.bytes);
+  if (Number(response.headers.get("Content-Length")) > available) {
+    await response.body?.cancel();
+    throw new Error("Preload memory limit");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > available) {
+      await reader.cancel();
+      throw new Error("Preload memory limit");
+    }
+    chunks.push(value);
+  }
+  if (signal.aborted) return;
+  entry.blobUrl = URL.createObjectURL(new Blob(chunks, {type: response.headers.get("Content-Type") || "application/octet-stream"}));
+  practiceResources.bytes += size;
+  entry.ready = true;
+}
+
+function updatePracticePreloadNotice() {
+  const notice = $("practicePreloadNotice");
+  if (!notice) return;
+  const entries = [...practiceResources.wanted].map((url) => practiceResources.assets.get(url));
+  notice.hidden = !entries.length;
+  if (!entries.length) return;
+  notice.textContent = entries.every((entry) => entry?.ready)
+    ? "Upcoming questions preloaded for this session."
+    : entries.some((entry) => entry?.finished && !entry.ready)
+      ? "Some upcoming media still need a connection. Preloading continues in the background."
+      : "Preloading upcoming questions…";
+}
+
+async function runPracticePreloads() {
+  if (practiceResources.active) return;
+  const generation = practiceResources.generation;
+  const controller = new AbortController();
+  practiceResources.active = controller;
+  while (practiceResources.queue.length && !controller.signal.aborted) {
+    const entry = practiceResources.queue.shift();
+    const request = new AbortController();
+    const abort = () => request.abort();
+    controller.signal.addEventListener("abort", abort, {once: true});
+    const timeout = setTimeout(abort, 45000);
+    try {
+      if (entry.type === "page") {
+        const html = await fetchSourcePage(entry.page, request.signal);
+        if (generation !== practiceResources.generation) return;
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const body = doc.querySelector('[itemprop="articleBody"], main') || doc.body;
+        body.querySelectorAll("img[src]").forEach((image) => {
+          if (!practiceResources.wanted.has(entry.url)) return;
+          const src = image.getAttribute("src");
+          if (!src || /^(data:|blob:)/i.test(src)) return;
+          queuePracticeAsset(/^(https?:)?\/\//.test(src) ? src : assetUrl(resolveRelativePath(entry.page, src)), "image");
+        });
+        entry.ready = true;
+      } else await preloadPracticeAsset(entry, request.signal);
+    } catch {
+      // Speculative loading must never block the question or its normal retry.
+    } finally {
+      clearTimeout(timeout);
+      controller.signal.removeEventListener("abort", abort);
+      entry.finished = true;
+    }
+    if (generation !== practiceResources.generation) return;
+    updatePracticePreloadNotice();
+  }
+  if (generation === practiceResources.generation) {
+    practiceResources.active = null;
+    if (controller.signal.aborted) practiceResources.queue = [];
+  }
+}
+
+function queuePracticeAsset(path, type, page = "") {
+  if (!path) return;
+  const url = new URL(path, document.baseURI);
+  if (!["https:", "http:"].includes(url.protocol)) return;
+  practiceResources.wanted.add(url.href);
+  if (practiceResources.assets.has(url.href)) return;
+  const entry = {url: url.href, type, page, ready: false, finished: false};
+  practiceResources.assets.set(url.href, entry);
+  practiceResources.queue.push(entry);
+}
+
+function preparePracticeResources(group) {
+  const scope = practiceResources.scope;
+  const groups = sectionGroups();
+  const upcoming = groups.slice(state.index, state.index + 2);
+  practiceResources.wanted.clear();
+  for (const item of upcoming) {
+    if (state.section !== "listening" || state.submissions.listening) {
+      const page = item.source_file || item.page;
+      if (page) queuePracticeAsset(sourceUrl(page), "page", page);
+    }
+    const questionIndex = item === upcoming[0] && state.section === "listening"
+      ? state.listeningQuestionIndex.get(listeningUnlockKey(group)) || 0 : 0;
+    const media = [
+      ...(item === upcoming[0] ? [] : item.media || []),
+      ...item.questions.slice(questionIndex).flatMap((q) => [
+        ...(q.media || []), ...(q.options || []).flatMap((option) => option.media || []),
+      ]),
+    ];
+    for (const asset of media) {
+      const url = assetUrl(asset.path);
+      const active = document.querySelector("#partPassageMedia, #listeningQuestionAudio");
+      if (active?.getAttribute("src") === url) continue;
+      queuePracticeAsset(url, asset.type);
+    }
+  }
+  practiceResources.queue = practiceResources.queue.filter((entry) => {
+    if (practiceResources.wanted.has(entry.url)) return true;
+    practiceResources.assets.delete(entry.url);
+    return false;
+  });
+  updatePracticePreloadNotice();
+  // Let the active recording buffer first, so look-ahead does not compete with it.
+  const player = $("partPassageMedia") || $("listeningQuestionAudio");
+  const start = () => {
+    if (scope === practiceResources.scope && !$("practiceView")?.hidden) runPracticePreloads();
+  };
+  if (player && player.readyState < 4) player.addEventListener("canplaythrough", start, {once: true});
+  else start();
+}
+
 function storageKey(testId = state.testId) {
   return `celpip-practice:${testId}`;
 }
@@ -804,6 +1039,7 @@ async function restoreListeningReviewFromHistory() {
 }
 
 function setView(view) {
+  if (view !== "practice") resetPracticeResources();
   $("overviewView").hidden = view !== "overview";
   $("historyView").hidden = view !== "history";
   $("practiceView").hidden = view !== "practice";
@@ -1127,6 +1363,7 @@ function renderSections() {
 async function render() {
   stopSpeakingTask();
   stopPracticePlayback();
+  resetPracticeResources(`${state.testId}:${state.section}`);
   if (["listening", "reading"].includes(state.section) && !state.submissions[state.section]) {
     $("nextBtn").disabled = true;
     $("questionNav").querySelectorAll("button").forEach((button) => { button.disabled = true; });
@@ -1211,6 +1448,9 @@ async function render() {
   $("nextBtn").title = state.section === "reading" && !submitted && unansweredInPart
     ? `${unansweredInPart} unanswered. You cannot return after leaving this Part.`
     : "";
+  mountPreparedMedia($("sourceContent"));
+  mountPreparedMedia($("mediaArea"));
+  preparePracticeResources(group);
 }
 
 function handleNext() {
@@ -1906,10 +2146,27 @@ async function startListeningQuestionAudio(clock) {
     recordPosition(true);
   };
   const progress = () => recordPosition();
+  const buffering = () => {
+    if (cancelled || !player.isConnected || player.readyState >= 3) return;
+    clock.pause();
+    stopTimer();
+    fallback.hidden = false;
+    fallback.disabled = true;
+    fallback.textContent = "Loading question audio — time paused";
+  };
+  const playing = () => {
+    if (cancelled || !player.isConnected) return;
+    clock.resume();
+    if (!state.timer.running) toggleTimer();
+    fallback.hidden = true;
+  };
   player.addEventListener("loadedmetadata", loaded);
   player.addEventListener("timeupdate", progress);
   player.addEventListener("ended", ended);
   player.addEventListener("error", failed);
+  player.addEventListener("waiting", buffering);
+  player.addEventListener("playing", playing);
+  if (player.readyState >= 1) loaded();
   state.practiceCleanup = () => {
     cancelled = true;
     clock.pause();
@@ -1917,10 +2174,14 @@ async function startListeningQuestionAudio(clock) {
     player.removeEventListener("timeupdate", progress);
     player.removeEventListener("ended", ended);
     player.removeEventListener("error", failed);
+    player.removeEventListener("waiting", buffering);
+    player.removeEventListener("playing", playing);
     player.pause();
   };
   if (saved?.ended) { next.disabled = false; return; }
   next.disabled = true;
+  clock.pause();
+  stopTimer();
   const play = async () => {
     if (cancelled) return;
     fallback.disabled = true;
@@ -1928,8 +2189,6 @@ async function startListeningQuestionAudio(clock) {
       restorePosition = Math.max(restorePosition, player.currentTime || 0);
       player.load();
     }
-    clock.resume();
-    if (!state.timer.running) toggleTimer();
     try {
       await player.play();
       if (!cancelled) fallback.hidden = true;
@@ -1990,6 +2249,7 @@ function renderListeningGate(group, media) {
   $("answerArea").innerHTML = "";
   $("feedback").hidden = true;
 
+  mountPreparedMedia($("mediaArea"));
   const player = $("partPassageMedia");
   const startButton = $("startPassageBtn");
   const status = $("passageStatus");
@@ -2028,12 +2288,22 @@ function renderListeningGate(group, media) {
     startButton.textContent = `Start ${isVideo ? "Video" : "Audio"}`;
     status.textContent = "Playback could not start or was interrupted. Click Start to continue. Your time is paused.";
   };
+  const buffering = () => {
+    if (cancelled || !player.isConnected || player.readyState >= 3) return;
+    stopTimer();
+    status.textContent = "Buffering audio or video… Your time is paused.";
+  };
+  const playing = () => {
+    if (cancelled || !player.isConnected) return;
+    if (!state.timer.running) toggleTimer();
+    status.textContent = "Listen carefully. Questions remain hidden until playback ends.";
+  };
   startButton.addEventListener("click", async () => {
     if (cancelled) return;
-    if (!state.timer.running) toggleTimer();
     startButton.disabled = true;
     startButton.textContent = "Playing...";
-    status.textContent = "Listen carefully. Questions remain hidden until playback ends.";
+    status.textContent = "Loading audio or video… Your time is paused.";
+    stopTimer();
     if (player.error) {
       restorePosition = Math.max(restorePosition, player.currentTime || 0);
       player.load();
@@ -2054,12 +2324,17 @@ function renderListeningGate(group, media) {
   };
   player.addEventListener("ended", ended);
   player.addEventListener("error", failed);
+  player.addEventListener("waiting", buffering);
+  player.addEventListener("playing", playing);
+  if (player.readyState >= 1) loaded();
   state.practiceCleanup = () => {
     cancelled = true;
     player.removeEventListener("loadedmetadata", loaded);
     player.removeEventListener("timeupdate", updateProgress);
     player.removeEventListener("ended", ended);
     player.removeEventListener("error", failed);
+    player.removeEventListener("waiting", buffering);
+    player.removeEventListener("playing", playing);
     player.pause();
   };
   startButton.click();
@@ -2141,9 +2416,7 @@ async function loadReadingLayout(group) {
   const cacheKey = `${state.testId}:${page}:reading-layout`;
   if (!state.sourceCache.has(cacheKey)) {
     try {
-      const response = await fetch(sourceUrl(page), {cache: "no-store"});
-      if (!response.ok) return null;
-      const html = extractArticle(await response.text(), page);
+      const html = extractArticle(await fetchSourcePage(page), page);
       state.sourceCache.set(cacheKey, readingLayoutFromHtml(html, group));
     } catch {
       return null;
@@ -2618,9 +2891,7 @@ async function loadSpeakingPrompt(question) {
   const sourceFile = question.source_file || question.source_pages?.[0]?.file;
   if (!sourceFile) return;
   try {
-    const response = await fetch(sourceUrl(sourceFile), { cache: "no-store" });
-    if (!response.ok) return;
-    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const doc = new DOMParser().parseFromString(await fetchSourcePage(sourceFile), "text/html");
     const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody'], main");
     if (!body) return;
     const fragment = doc.createElement("div");
@@ -2864,7 +3135,7 @@ async function bindSpeakingChoiceSelector(card, question, status, reviewOnly = f
   let optionCells = speakingOptionCells(card.querySelector(".structured-prompt"));
   if (optionCells.length < 2 && question.source_file) {
     try {
-      const html = await fetch(sourceUrl(question.source_file), { cache: "no-store" }).then((response) => response.text());
+      const html = await fetchSourcePage(question.source_file);
       const doc = new DOMParser().parseFromString(html, "text/html");
       optionCells = speakingOptionCells(doc);
     } catch {
@@ -2939,9 +3210,7 @@ async function loadWritingPrompt(question) {
   const sourceFile = question.source_file || question.source_pages?.[0]?.file;
   if (!sourceFile) return;
   try {
-    const response = await fetch(sourceUrl(sourceFile), { cache: "no-store" });
-    if (!response.ok) return;
-    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const doc = new DOMParser().parseFromString(await fetchSourcePage(sourceFile), "text/html");
     const body = doc.querySelector(".com-content-article__body, [itemprop='articleBody'], main");
     if (!body) return;
     const fragment = doc.createElement("div");
@@ -2994,6 +3263,7 @@ function responseSamplesHtml(question) {
 function bindQuestionCard(q) {
   const card = document.querySelector(`[data-key="${CSS.escape(q.key)}"]`);
   if (!card) return;
+  mountPreparedMedia(card);
   card.querySelectorAll("input[type='radio']").forEach((input) => {
     input.addEventListener("change", () => {
       state.answers[q.key] = input.value;
@@ -3512,7 +3782,7 @@ async function renderSource(group, showHidden = false) {
   const cacheKey = `${state.testId}:${page}:${showHidden ? "analysis" : "normal"}`;
   if (!state.sourceCache.has(cacheKey)) {
     try {
-      const html = await fetch(sourceUrl(page), { cache: "no-store" }).then((r) => r.text());
+      const html = await fetchSourcePage(page);
       state.sourceCache.set(cacheKey, extractArticle(html, page, showHidden));
     } catch {
       state.sourceCache.set(cacheKey, "<p>Could not load the saved source page.</p>");

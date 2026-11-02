@@ -63,6 +63,17 @@ all 38 answers and 27 original-source recording references before creating a new
 pack; it never replaces an existing pack or generates content. Streaming audio
 uses the stable source endpoint, not expiring redirected URLs.
 
+Practice preloads the current group's remaining question media and the next
+group's media/source page, after the active Listening player can play through.
+Same-origin assets are retained as complete blobs in this tab (64 MiB total,
+24 MiB per file). Cross-origin recordings/images use retained native elements;
+their buffering remains subject to the publisher and browser. Background loads
+never play media, unlock questions, or start timers. Failed preloads fall back
+to normal playback. Leaving practice or changing test/section cancels pending
+work and releases the session cache. This is session look-ahead, not a persistent
+offline app: reloading/closing the page, server sync, and uncached external media
+still require a connection.
+
 Convert legacy `output/local_celpip*` snapshots into compact private packs:
 
 ```bash
