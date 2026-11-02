@@ -14,6 +14,8 @@ Listening follows the [official sample's six parts](https://instructionalproduct
 
 Reading follows the [official interactive sample](https://instructionalproducts.paragontesting.ca/InstructionalProducts/FreeOnlineSampleTest/FOST/View/43cc4771-b071-4c82-927a-3a75c7c36e35): click the small arrow inside a blank to open the answer choices. Your selection becomes bold, underlined text in the sentence, and the paragraph reflows around it. Click the selected text to change it. Replies in Part 1, diagram emails in Part 2, and comments in Part 4 keep their original paragraphs. Other questions appear as sentence rows in a shared answer panel; Part 3 keeps the A–E paragraph choices. Arrow keys and Enter also work. The four parts have independent 11-, 9-, 10-, and 13-minute timers. You can leave a part early with unanswered questions after confirming; you cannot return to it during the attempt. Timeouts advance without confirmation. Selections save automatically and remain visible during review.
 
+In Listening and Reading review, tap any inline answer or its arrow to see every choice. The menu marks your submitted answer; browsing or tapping other choices keeps that answer and the score unchanged. Correct answers stay hidden until you choose to reveal them.
+
 Speaking prompts also recover the original paragraphs, line breaks, options and pictures for every task type. Source-page fonts and large empty gaps are normalized, pictures appear alongside their instructions without duplication, and the preparation/recording controls stay visible while scrolling.
 
 No official CELPIP content is included. Public demo content is fake; real or licensed practice material must stay local.

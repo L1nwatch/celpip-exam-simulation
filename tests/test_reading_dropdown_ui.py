@@ -211,7 +211,7 @@ class ReadingDropdownUiTests(unittest.TestCase):
         WebDriverWait(self.driver, 5).until(lambda d: d.execute_script(
             "return state.submissions.reading?.correct === 38"))
         self.assertEqual(38, self.driver.execute_script("return state.submissions.reading.total"))
-        WebDriverWait(self.driver, 5).until(lambda d: all(select.get_attribute("aria-disabled") == "true"
+        WebDriverWait(self.driver, 5).until(lambda d: all(select.get_attribute("aria-readonly") == "true"
             for select in d.find_elements("css selector", ".reading-select")))
 
     def test_unwrapped_diagram_email_paragraphs_are_kept_together(self):
@@ -257,10 +257,15 @@ class ReadingDropdownUiTests(unittest.TestCase):
         """)
         self.assertIsNone(error)
         selects = self.driver.find_elements("css selector", ".reading-select")
-        self.assertTrue(all(select.get_attribute("aria-disabled") == "true" for select in selects))
+        self.assertTrue(all(select.get_attribute("aria-readonly") == "true" for select in selects))
         self.assertEqual("reading-2-1-o2", selects[0].get_attribute("data-value"))
-        selects[0].click()
+        self.open_answers("reading-2-1")
+        self.assertEqual(4, len(self.driver.find_elements("css selector", '[role="option"]')))
+        self.assertEqual("Your answer", self.driver.find_element("css selector", ".reading-choice-saved").text)
+        self.driver.find_element("css selector", '[data-option-id="reading-2-1-o1"]').click()
         self.assertFalse(self.driver.find_element("id", "readingAnswerOptions").is_displayed())
+        self.assertEqual("reading-2-1-v2", self.driver.execute_script("return state.answers['reading-2-1']"))
+        self.assertEqual("reading-2-1-o2", selects[0].get_attribute("data-value"))
         card = self.driver.find_element("css selector", '[data-key="reading-2-1"]')
         self.assertNotIn("Correct answer:", card.text)
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'})", card)
@@ -270,6 +275,23 @@ class ReadingDropdownUiTests(unittest.TestCase):
         note = self.driver.find_element("css selector", '[data-key="reading-2-1"] .review-note-input')
         note.send_keys("Check the opening sentence.")
         self.assertEqual("Check the opening sentence.", self.driver.execute_script("return state.notes['reading-2-1']"))
+
+    def test_unanswered_review_can_inspect_all_five_choices_with_the_keyboard(self):
+        self.open_part(3)
+        self.driver.execute_async_script("""
+            const done = arguments[0];
+            state.answers = {}; state.checked = {};
+            state.submissions.reading = {correct:0, total:38, elapsed_seconds:70};
+            render().then(done);
+        """)
+        control = self.driver.find_element("css selector", '[data-reading-key="reading-3-1"]')
+        control.send_keys(Keys.ENTER)
+        self.assertEqual(list("ABCDE"), [option.text for option in self.driver.find_elements("css selector", '[role="option"]')])
+        self.assertFalse(self.driver.find_elements("css selector", ".reading-choice-saved"))
+        control.send_keys(Keys.END, Keys.ENTER)
+        self.assertFalse(self.driver.find_element("id", "readingAnswerOptions").is_displayed())
+        self.assertFalse(self.driver.execute_script("return 'reading-3-1' in state.answers"))
+        self.assertEqual("", control.get_attribute("data-value"))
 
     def test_selects_fit_phone_and_desktop_after_long_answers(self):
         self.driver.execute_script("""

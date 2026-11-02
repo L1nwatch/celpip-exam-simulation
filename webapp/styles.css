@@ -1006,14 +1006,13 @@ h1 {
   font-weight: 700;
 }
 
-.reading-select.has-answer .reading-answer-arrow { display: none; }
+.reading-select.has-answer:not([aria-readonly="true"]) .reading-answer-arrow { display: none; }
 
 .reading-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.reading-select[aria-disabled="true"] { cursor: default; }
 .reading-select.correct { color: var(--good); }
 .reading-select.wrong { color: var(--bad); }
 
@@ -1046,6 +1045,13 @@ h1 {
 }
 
 .reading-answer-choice.is-active { background: #e5f1f7; }
+
+.reading-choice-saved {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
 
 .reading-choice-circle {
   width: 14px;

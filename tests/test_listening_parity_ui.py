@@ -203,9 +203,62 @@ class ListeningParityUiTests(unittest.TestCase):
         self.show_group(6, review=True)
         controls = self.driver.find_elements("css selector", ".reading-select")
         self.assertEqual(8, len(controls))
-        self.assertTrue(all(c.get_attribute("aria-disabled") == "true" for c in controls))
+        self.assertTrue(all(c.get_attribute("aria-readonly") == "true" for c in controls))
         self.assertEqual("listening-6-1-o2", controls[0].get_attribute("data-value"))
         self.assertEqual(8, len(self.driver.find_elements("css selector", ".review-note-input")))
+
+    def test_phone_review_can_tap_choices_without_changing_submitted_answers(self):
+        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width":390, "height":844, "deviceScaleFactor":1, "mobile":True})
+        self.driver.execute_cdp_cmd("Emulation.setTouchEmulationEnabled", {"enabled":True})
+
+        def tap(element):
+            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", element)
+            point = self.driver.execute_script("""
+                const r = arguments[0].getBoundingClientRect();
+                return {x:r.x+r.width/2, y:r.y+r.height/2};
+            """, element)
+            self.assertTrue(self.driver.execute_script("""
+                return arguments[0].contains(document.elementFromPoint(arguments[1].x, arguments[1].y));
+            """, element, point), self.driver.execute_script("""
+                return {point:arguments[0], hit:document.elementFromPoint(arguments[0].x, arguments[0].y)?.outerHTML};
+            """, point))
+            self.driver.execute_cdp_cmd("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[point]})
+            self.driver.execute_cdp_cmd("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
+
+        try:
+            for index in (5, 6, 7):
+                with self.subTest(part=index - 1):
+                    self.show_group(index, review=True)
+                    control = self.driver.find_element("css selector", ".reading-select")
+                    original = self.driver.execute_script("""
+                        return JSON.stringify({answers:state.answers, checked:state.checked,
+                            submission:state.submissions.listening, storage:{...localStorage}});
+                    """)
+                    self.assertEqual("0", control.get_attribute("tabindex"))
+                    self.assertTrue(control.find_element("css selector", ".reading-answer-arrow").is_displayed())
+                    tap(control.find_element("css selector", ".reading-answer-arrow"))
+                    menu = self.driver.find_element("id", "readingAnswerOptions")
+                    self.wait(lambda d: menu.is_displayed())
+                    options = menu.find_elements("css selector", '[role="option"]')
+                    self.assertEqual(4, len(options))
+                    self.assertEqual("true", options[1].get_attribute("aria-selected"))
+                    self.assertEqual("Your answer", options[1].find_element("css selector", ".reading-choice-saved").text)
+                    self.assertNotIn("Correct answer:", menu.text)
+                    self.assertTrue(self.driver.execute_script("""
+                        const r = document.getElementById('readingAnswerOptions').getBoundingClientRect();
+                        return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+                    """))
+                    tap(options[0])
+                    self.wait(lambda d: not menu.is_displayed())
+                    self.assertEqual(original, self.driver.execute_script("""
+                        return JSON.stringify({answers:state.answers, checked:state.checked,
+                            submission:state.submissions.listening, storage:{...localStorage}});
+                    """))
+                    self.assertTrue(control.get_attribute("data-value").endswith("-o2"))
+        finally:
+            self.driver.execute_cdp_cmd("Emulation.setTouchEmulationEnabled", {"enabled":False})
+            self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
 
     def seed_mock(self, index, unlocked=False, heard=False):
         self.driver.execute_script("""

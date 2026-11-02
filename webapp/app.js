@@ -2114,8 +2114,9 @@ function readingSelectHtml(question) {
   const selected = question.options.find((option) => saved === option.id || saved === option.value);
   const grade = submitted && checked !== undefined ? checked ? "correct" : "wrong" : "";
   return `<span class="reading-select ${selected ? "has-answer" : ""} ${grade}" role="combobox"
-    tabindex="${submitted ? -1 : 0}" aria-haspopup="listbox" aria-expanded="false"
-    aria-controls="readingAnswerOptions" aria-disabled="${submitted}"
+    tabindex="0" aria-haspopup="listbox" aria-expanded="false"
+    aria-controls="readingAnswerOptions" aria-readonly="${submitted}"
+    ${submitted ? 'title="View all choices. Your submitted answer is read-only."' : ""}
     data-reading-key="${escapeHtml(question.key)}" data-value="${escapeHtml(selected?.id || "")}"
     aria-label="Question ${questionNumber(question)}: ${escapeHtml(selected?.text || "Choose an answer")}"
     ${grade === "wrong" ? 'aria-invalid="true"' : ""}>
@@ -2240,17 +2241,19 @@ function bindReadingAnswerMenus(group) {
     return true;
   };
   const open = (control, question) => {
-    if (disposed || state.submissions[section]) return;
+    if (disposed) return;
     if (active?.control === control) { close(); return; }
     close();
     const saved = state.answers[question.key];
     const selected = question.options.findIndex((option) => saved === option.id || saved === option.value);
+    const review = Boolean(state.submissions[section]);
     active = {control, question, index: Math.max(0, selected)};
     menu.setAttribute("aria-label", `Answers for Question ${questionNumber(question)}`);
+    menu.setAttribute("aria-readonly", String(review));
     menu.innerHTML = question.options.map((option, index) => `<div role="option"
       id="readingAnswerOption${index}" class="reading-answer-choice" data-reading-option="${index}"
       data-option-id="${escapeHtml(option.id)}" aria-selected="${index === selected}">
-      <span class="reading-choice-circle" aria-hidden="true"></span><span>${escapeHtml(option.text || option.label)}</span>
+      <span class="reading-choice-circle" aria-hidden="true"></span><span>${escapeHtml(option.text || option.label)}${review && index === selected ? '<small class="reading-choice-saved">Your answer</small>' : ""}</span>
     </div>`).join("");
     menu.hidden = false;
     if (!positionMenu()) return;
@@ -2259,8 +2262,13 @@ function bindReadingAnswerMenus(group) {
     highlight(active.index);
   };
   const choose = () => {
-    if (disposed || !active || state.submissions[section]) return;
+    if (disposed || !active) return;
     const {control, question, index} = active;
+    if (state.submissions[section]) {
+      close();
+      control.focus({preventScroll: true});
+      return;
+    }
     const option = question.options[index];
     state.answers[question.key] = option.id;
     control.dataset.value = option.id;
@@ -2281,7 +2289,7 @@ function bindReadingAnswerMenus(group) {
     const question = group.questions.find((item) => item.key === control.dataset.readingKey);
     control.addEventListener("click", () => open(control, question));
     control.addEventListener("keydown", (event) => {
-      if (state.submissions[section]) return;
+      if (disposed) return;
       const expanded = active?.control === control;
       if (["Enter", " ", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
