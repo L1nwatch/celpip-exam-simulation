@@ -796,7 +796,7 @@ h1 {
 
 .listening-group-timer {
   justify-content: flex-end;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .listening-group-timer span {
@@ -806,31 +806,32 @@ h1 {
 
 .listening-group-timer strong {
   min-width: 54px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
+.listening-group-timer strong.is-urgent {
+  color: #8b261d;
+  background: #ffe6df;
+  outline: 1px solid #d78c7f;
+}
+
+.listening-timeout-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #d6a676;
+  border-radius: 6px;
+  background: #fff4e8;
+  color: #713d0c;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .listening-group-timer button {
   white-space: nowrap;
-}
-
-.listening-question-controls {
-  position: sticky;
-  bottom: 60px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, .97);
-}
-
-.listening-question-controls strong {
-  font-variant-numeric: tabular-nums;
 }
 
 .media-area img,
@@ -2009,11 +2010,28 @@ textarea {
     grid-template-columns: repeat(6, 1fr);
   }
 
-  .listening-group-status,
-  .listening-group-status > div:first-child,
+  .listening-group-status {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .listening-group-status > div:first-child {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+
   .listening-group-timer {
-    align-items: flex-start;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .listening-group-timer button {
+    padding-inline: 10px;
+    font-size: 13px;
   }
 
   .listening-group-timer strong {

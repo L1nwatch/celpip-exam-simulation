@@ -101,6 +101,7 @@ const state = {
   listeningUnlocked: new Set(),
   listeningQuestionIndex: new Map(),
   listeningQuestionTimer: null,
+  listeningTimeoutNotice: "",
   sourceCache: new Map(),
   sourceContextKey: null,
   dbStatus: {},
@@ -923,6 +924,7 @@ async function init() {
 }
 
 async function loadTest() {
+  state.listeningTimeoutNotice = "";
   state.revealedAnswers.clear();
   setSidebarCollapsed(true);
   setView("practice");
@@ -1039,6 +1041,7 @@ async function restoreListeningReviewFromHistory() {
 }
 
 function setView(view) {
+  if (view !== "practice") state.listeningTimeoutNotice = "";
   if (view !== "practice") resetPracticeResources();
   $("overviewView").hidden = view !== "overview";
   $("historyView").hidden = view !== "history";
@@ -1364,6 +1367,7 @@ async function render() {
   stopSpeakingTask();
   stopPracticePlayback();
   resetPracticeResources(`${state.testId}:${state.section}`);
+  if (state.section !== "listening") state.listeningTimeoutNotice = "";
   if (["listening", "reading"].includes(state.section) && !state.submissions[state.section]) {
     $("nextBtn").disabled = true;
     $("questionNav").querySelectorAll("button").forEach((button) => { button.disabled = true; });
@@ -1439,6 +1443,8 @@ async function render() {
     || (strictSequence && !(state.section === "speaking" && speakingComplete));
   $("prevBtn").hidden = strictSequence || showSectionIntro;
   $("nextBtn").hidden = showSectionIntro || (["listening", "speaking"].includes(state.section) && !submitted);
+  const navigationControls = document.querySelector(".question-panel > .controls");
+  if (navigationControls) navigationControls.hidden = state.section === "listening" && !submitted;
   $("prevBtn").disabled = state.index === 0;
   const isLastPart = state.index === groups.length - 1;
   const nextSubmits = isLastPart && !submitted && ["reading", "writing"].includes(state.section);
@@ -2000,12 +2006,19 @@ function renderListeningQuestion(group) {
   const total = listeningGroupOrder(group) < 3
     ? sectionGroups().filter((item) => listeningGroupOrder(item) < 3).reduce((sum, item) => sum + item.questions.length, 0)
     : group.questions.length;
-  $("mediaArea").innerHTML = `<div class="part-complete"><strong>Passage completed</strong><span>Question ${questionNumber(question)} of ${total}</span></div>`;
-  $("answerArea").innerHTML = `${renderQuestionCard(question, true)}
-    <div class="listening-question-controls">
-      <span>Time remaining: <strong id="listeningQuestionTime">00:30</strong></span>
+  const questionLabel = listeningGroupOrder(group) < 3
+    ? `Question ${questionNumber(question)} of ${total}` : `Question ${questionNumber(question)}`;
+  const positionLabel = listeningGroupOrder(group) < 3
+    ? "Passage completed" : `${index + 1} of ${total} in this part`;
+  $("mediaArea").className = "media-area listening-group-media";
+  $("mediaArea").innerHTML = `${listeningTimeoutNoticeHtml()}<div class="part-complete listening-group-status">
+    <div><strong>${questionLabel}</strong><span>${positionLabel}</span></div>
+    <div class="listening-group-timer">
+      <span>Time left</span><strong id="listeningQuestionTime" role="timer" aria-live="off">00:30</strong>
       <button id="nextListeningQuestion" type="button">${index === group.questions.length - 1 ? "Finish Part" : "Next Question"}</button>
-    </div>`;
+    </div>
+  </div>`;
+  $("answerArea").innerHTML = renderQuestionCard(question, true);
   bindQuestionCard(question);
   $("feedback").hidden = true;
   $("nextListeningQuestion").addEventListener("click", () => advanceListeningQuestion(group));
@@ -2037,14 +2050,14 @@ function renderListeningAnswerGroup(group) {
 function renderListeningQuestionGroup(group, seconds) {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   $("mediaArea").className = "media-area listening-group-media";
-  $("mediaArea").innerHTML = `<div class="part-complete listening-group-status">
+  $("mediaArea").innerHTML = `${listeningTimeoutNoticeHtml()}<div class="part-complete listening-group-status">
     <div>
       <strong>Passage completed</strong>
       <span>${group.questions.length} questions</span>
     </div>
     <div class="listening-group-timer">
-      <span>Time remaining</span>
-      <strong id="listeningQuestionTime">${formatDuration(seconds)}</strong>
+      <span>Time left</span>
+      <strong id="listeningQuestionTime" role="timer" aria-live="off">${formatDuration(seconds)}</strong>
       <button id="nextListeningQuestion" type="button">Finish Part</button>
     </div>
   </div>`;
@@ -2052,12 +2065,12 @@ function renderListeningQuestionGroup(group, seconds) {
   $("feedback").hidden = true;
   $("nextListeningQuestion").addEventListener("click", advanceListeningPart);
   if (!state.timer.running) toggleTimer();
-  const clock = startListeningQuestionTimer(group, seconds, advanceListeningPart);
+  const clock = startListeningQuestionTimer(group, seconds, () => advanceListeningPart(true));
   const menuCleanup = state.practiceCleanup;
   state.practiceCleanup = () => { menuCleanup?.(); clock.pause(); };
 }
 
-function startListeningQuestionTimer(group, seconds, onExpire = () => advanceListeningQuestion(group)) {
+function startListeningQuestionTimer(group, seconds, onExpire = () => advanceListeningQuestion(group, true)) {
   const timerKey = `${listeningUnlockKey(group)}:${state.listeningQuestionIndex.get(listeningUnlockKey(group)) || 0}`;
   const exam = state.exam;
   let remaining = isMockActive() ? (state.exam.listeningRemaining?.[timerKey] ?? seconds) : seconds;
@@ -2068,7 +2081,10 @@ function startListeningQuestionTimer(group, seconds, onExpire = () => advanceLis
   let lastSaved = null;
   const save = () => {
     const value = Math.ceil(remaining);
-    if (output?.isConnected) output.textContent = formatDuration(value);
+    if (output?.isConnected) {
+      output.textContent = formatDuration(value);
+      output.classList.toggle("is-urgent", value <= 10);
+    }
     if (isMockActive() && state.exam === exam && value !== lastSaved) {
       lastSaved = value;
       exam.listeningRemaining ||= {};
@@ -2200,21 +2216,31 @@ async function startListeningQuestionAudio(clock) {
   await play();
 }
 
-async function advanceListeningQuestion(group) {
+function listeningTimeoutNoticeHtml() {
+  return state.listeningTimeoutNotice
+    ? `<p class="listening-timeout-notice" role="status">${escapeHtml(state.listeningTimeoutNotice)}</p>` : "";
+}
+
+async function advanceListeningQuestion(group, timedOut = false) {
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   state.listeningQuestionTimer = null;
   const key = listeningUnlockKey(group);
+  const question = group.questions[state.listeningQuestionIndex.get(key) || 0];
+  state.listeningTimeoutNotice = timedOut === true
+    ? `Time is up for Question ${questionNumber(question)}. Continuing automatically. Any answer you selected was saved.` : "";
   const nextIndex = (state.listeningQuestionIndex.get(key) || 0) + 1;
   if (nextIndex < group.questions.length) {
     state.listeningQuestionIndex.set(key, nextIndex);
   } else {
-    await advanceListeningPart();
+    await advanceListeningPart(timedOut, true);
     return;
   }
   await renderPracticeStep();
 }
 
-async function advanceListeningPart() {
+async function advanceListeningPart(timedOut = false, keepNotice = false) {
+  if (!keepNotice) state.listeningTimeoutNotice = timedOut === true
+    ? "Time is up for this part. Continuing automatically. Any answers you selected were saved." : "";
   if (state.listeningQuestionTimer) window.clearInterval(state.listeningQuestionTimer);
   state.listeningQuestionTimer = null;
   if (state.index < sectionGroups().length - 1) {
@@ -2233,7 +2259,7 @@ function listeningUnlockKey(group) {
 function renderListeningGate(group, media) {
   const src = assetUrl(media.path);
   const isVideo = media.type === "video" || /\.(mp4|webm)$/i.test(media.path);
-  $("mediaArea").innerHTML = `<div class="listening-gate">
+  $("mediaArea").innerHTML = `${listeningTimeoutNoticeHtml()}<div class="listening-gate">
     <p class="eyebrow">Listening passage</p>
     <h2>Questions will appear after the ${isVideo ? "video" : "audio"} finishes.</h2>
     <p>This passage plays once and cannot be paused or replayed during the attempt.</p>
@@ -4029,8 +4055,9 @@ function resetPracticeScroll() {
     if (questions) questions.scrollTop = 0;
 
     if (window.matchMedia("(max-width: 1040px)").matches) {
+      const listeningHeader = $("mediaArea")?.classList.contains("listening-group-media") ? $("mediaArea") : null;
       const firstQuestion = $("answerArea")?.querySelector(".question-card");
-      (firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });
+      (listeningHeader || firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });
     }
   };
   reset();

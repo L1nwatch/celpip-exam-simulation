@@ -266,7 +266,7 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn("if (source) source.scrollTop = 0;", app_js)
         self.assertIn("if (questions) questions.scrollTop = 0;", app_js)
         self.assertIn('window.matchMedia("(max-width: 1040px)").matches', app_js)
-        self.assertIn('(firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });', app_js)
+        self.assertIn('(listeningHeader || firstQuestion || questions)?.scrollIntoView({ block: "start", inline: "nearest" });', app_js)
         self.assertIn("window.requestAnimationFrame(reset);", app_js)
         self.assertIn("overflow-anchor: none;", styles)
 
@@ -422,7 +422,7 @@ class StaticWebUiTests(unittest.TestCase):
         self.assertIn('class="part-complete listening-group-status"', app_js)
         self.assertIn('class="listening-group-timer"', app_js)
         self.assertIn('group.questions.map((question) => renderQuestionCard(question)).join("")', app_js)
-        self.assertIn("startListeningQuestionTimer(group, seconds, advanceListeningPart)", app_js)
+        self.assertIn("startListeningQuestionTimer(group, seconds, () => advanceListeningPart(true))", app_js)
         self.assertIn(".listening-group-media", styles)
         self.assertIn("position: sticky;", styles)
         self.assertIn(".listening-group-timer", styles)

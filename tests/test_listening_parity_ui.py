@@ -149,6 +149,74 @@ class ListeningParityUiTests(unittest.TestCase):
         self.assertEqual(4, len(self.driver.find_elements("css selector", ".option-media img")))
         self.assertFalse(self.driver.find_elements("css selector", ".card-media img"))
 
+    def test_question_countdown_stays_visible_on_phone_and_desktop_while_scrolling(self):
+        try:
+            for width, height in ((320, 700), (390, 844), (1440, 900)):
+                self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                    "width": width, "height": height, "deviceScaleFactor": 1, "mobile": width < 680})
+                self.show_group(4)
+                self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+                self.driver.execute_script("""
+                    document.querySelectorAll('.option').forEach(o => o.style.minHeight = '200px');
+                    resetPracticeScroll();
+                """)
+                for scroll in (0, 400, 800):
+                    with self.subTest(width=width, scroll=scroll):
+                        self.driver.execute_script("""
+                            if (innerWidth <= 1040) {
+                                const panel = document.querySelector('.question-panel');
+                                window.scrollTo(0, panel.getBoundingClientRect().top + scrollY + arguments[0]);
+                            } else document.querySelector('.question-panel').scrollTop = arguments[0];
+                        """, scroll)
+                        self.assertTrue(self.driver.execute_script("""
+                            const e = document.getElementById('listeningQuestionTime'), r = e.getBoundingClientRect();
+                            return r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth
+                                && e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2));
+                        """))
+                self.assertFalse(self.driver.execute_script("return document.documentElement.scrollWidth > innerWidth"))
+        finally:
+            self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+
+    def test_group_countdown_stays_visible_on_phone_after_scrolling_to_later_answers(self):
+        try:
+            self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+                "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+            for index in (5, 6, 7):
+                self.show_group(index)
+                self.driver.execute_script("""
+                    document.querySelectorAll('.reading-question-row').forEach(e => e.style.minHeight = '140px');
+                    document.querySelector('.reading-select:last-of-type')?.scrollIntoView();
+                    const choices = document.querySelectorAll('.reading-select');
+                    choices[choices.length - 1].scrollIntoView({block:'center'});
+                """)
+                with self.subTest(index=index):
+                    self.assertTrue(self.driver.execute_script("""
+                        const e = document.getElementById('listeningQuestionTime'), r = e.getBoundingClientRect();
+                        return r.top >= 0 && r.bottom <= innerHeight
+                            && e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2));
+                    """))
+        finally:
+            self.driver.execute_cdp_cmd("Emulation.clearDeviceMetricsOverride", {})
+
+    def test_last_seconds_are_highlighted_and_timeout_explains_the_automatic_advance(self):
+        self.show_group(0)
+        self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+        self.driver.find_elements("css selector", '#answerArea input[type="radio"]')[1].click()
+        selected = self.driver.execute_script("return state.answers['listening-0-1']")
+        self.driver.execute_script("""
+            stopListeningQuestionTimer();
+            startListeningQuestionTimer(currentGroup(), 2);
+        """)
+        self.assertIn("is-urgent", self.driver.find_element("id", "listeningQuestionTime").get_attribute("class"))
+        self.wait(lambda d: d.find_elements("css selector", ".listening-timeout-notice"))
+        self.assertIn("Time is up for Question 1", self.driver.find_element("css selector", ".listening-timeout-notice").text)
+        self.assertEqual(selected, self.driver.execute_script("return state.answers['listening-0-1']"))
+        self.assertIn("Question 2", self.driver.find_element("id", "mediaArea").text)
+        self.wait(lambda d: d.find_element("id", "nextListeningQuestion").is_enabled())
+        self.driver.find_element("id", "nextListeningQuestion").click()
+        self.wait(lambda d: d.find_elements("id", "partPassageMedia"))
+        self.assertFalse(self.driver.find_elements("css selector", ".listening-timeout-notice"))
+
     def test_passage_autoplays_once_and_only_then_opens_questions(self):
         self.wait(lambda d: d.execute_script("return !document.getElementById('partPassageMedia').paused"))
         self.assertFalse(self.driver.find_elements("css selector", ".question-card"))
